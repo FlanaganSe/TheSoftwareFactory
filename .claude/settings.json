@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(**/*.md)",
+      "Read(**/*.md)"
+    ],
+    "ask": [
+      "Edit",
+      "Write",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(curl *)",
+      "Bash(cd *)"
+    ],
+    "deny": [
+      "Read(**/.env*)",
+      "Read(**/secrets/**)",
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(rm -rf *)",
+      "Bash(wget *)",
+      "Bash(find * -delete *)"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
+  }
+}
