@@ -207,3 +207,38 @@ export type {
 } from "./llm/index.js";
 export { createPlanActivities } from "./llm/plan-activities.js";
 export type { PlanActivityDeps } from "./llm/plan-activities.js";
+
+// === Evidence ===
+export {
+  createArtifactStore,
+  generateAnnotatedDiff,
+  classifyRisk,
+  generateEvidence,
+  buildLocator,
+  withOptionalArtifacts,
+  createManifest,
+  verifyManifest,
+  redactSecrets,
+  isContentSafe,
+  sha256,
+  categorizeRisks,
+  createEvidenceActivities,
+} from "./evidence/index.js";
+export type {
+  ArtifactStore,
+  ArtifactStoreConfig,
+  ArtifactRef,
+  DiffAnnotatorConfig,
+  AnnotatedDiffResult,
+  EvidenceGeneratorConfig,
+  ValidationData,
+  AgentResultData,
+  CapabilityData,
+  GenerateEvidenceResult,
+  EvidenceLocator,
+  ManifestEntry,
+  ManifestMeta,
+  EvidenceManifest,
+  RiskCategorization,
+  EvidenceActivityDeps,
+} from "./evidence/index.js";

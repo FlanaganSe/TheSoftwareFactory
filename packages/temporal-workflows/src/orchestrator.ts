@@ -112,6 +112,13 @@ export async function taskOrchestrator(
   let setupResult: SetupResult | undefined = input.setupResult;
   let implementResult: ImplementResult | undefined = input.implementResult;
   let validateResult: ValidateResult | undefined = input.validateResult;
+  let evidenceLocator:
+    | {
+        readonly taskId: string;
+        readonly bundleId: string;
+        readonly artifactPrefix: string;
+      }
+    | undefined;
 
   // ─── Signal Handlers ───
 
@@ -461,10 +468,77 @@ export async function taskOrchestrator(
         });
       }
     } else if (phase === "evidence") {
-      await executeChild("evidencePhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId }],
-      });
+      if (patched("m14-real-evidence")) {
+        const defaultContext: TrustedBaseContext = trustedContext ?? {
+          baseSha: "HEAD",
+          setupContract: null,
+          policySnapshot: [],
+          behavioralControlFiles: {},
+          validationCommandSources: [],
+          capturedAt: new Date().toISOString(),
+        };
+
+        const evidenceResult = await executeChild("evidencePhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              objective: input.objective,
+              attemptNumber,
+              baseSha: defaultContext.baseSha,
+              headSha: implementResult?.headSha ?? defaultContext.baseSha,
+              mergeBaseSha: defaultContext.baseSha,
+              containerId: setupResult?.sandboxInstance?.containerId ?? "",
+              validationResult: validateResult?.validationResult ?? {
+                testResults: {
+                  passed: 0,
+                  failed: 0,
+                  skipped: 0,
+                },
+                lintResults: { errorCount: 0, warningCount: 0 },
+                securityScanResults: {
+                  vulnerabilities: [],
+                  totalFindings: 0,
+                  criticalCount: 0,
+                  highCount: 0,
+                },
+                blastRadius: { files: 0, packages: 0 },
+                protectedSurfaceEdits: [],
+                migrationImpact: {
+                  hasMigrations: false,
+                  migrationFiles: [],
+                  schemaChanges: [],
+                },
+                revertabilityClass: "clean_revert",
+                commandsRun: [],
+              },
+              agentResult: {
+                filesModified:
+                  implementResult?.agentResult?.filesModified ?? [],
+                totalCostCents:
+                  implementResult?.agentResult?.totalCostCents ?? 0,
+              },
+              capabilitySnapshot: {
+                requiredStatusChecks:
+                  capabilitySnapshot?.requiredStatusChecks ?? [],
+              },
+              changedFiles: implementResult?.agentResult?.filesModified ?? [],
+              policies: defaultContext.policySnapshot,
+              codeownersEntries: capabilitySnapshot?.codeowners?.entries ?? [],
+              indexVersionId: understandResult?.indexVersionId ?? "",
+            },
+          ],
+        });
+
+        evidenceLocator = evidenceResult.locator;
+        currentState = "evidence_ready";
+      } else {
+        await executeChild("evidencePhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId }],
+        });
+      }
     } else if (phase === "review") {
       const reviewResult = await executeChild("reviewPhase", {
         workflowId: childId,

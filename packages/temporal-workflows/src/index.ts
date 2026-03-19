@@ -107,4 +107,12 @@ export type {
   BlastRadiusConfigData,
   BlastRadiusResultData,
   ValidatorBoundaryConfigData,
+  EvidenceActivities,
+  EvidenceGenerateInput,
+  EvidenceGenerateResult,
+  EvidenceValidationData,
+  EvidenceAgentResultData,
+  EvidenceCapabilityData,
+  EvidenceLocatorData,
+  RiskCategorizationData,
 } from "./activity-types.js";

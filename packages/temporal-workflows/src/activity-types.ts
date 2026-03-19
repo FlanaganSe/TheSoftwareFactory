@@ -8,6 +8,7 @@
 import type {
   BlastRadius,
   CapabilitySnapshot,
+  CodeownersEntry,
   CommandRecord,
   LintResults,
   MigrationImpact,
@@ -359,4 +360,129 @@ export interface ValidationActivities {
     config: ValidatorBoundaryConfigData,
   ): Promise<ValidatorControlFileEdit[]>;
   getChangedFiles(containerId: string, baseSha: string): Promise<string[]>;
+}
+
+// ─── Evidence Activities ───
+
+export interface EvidenceValidationData {
+  readonly testResults: {
+    readonly passed: number;
+    readonly failed: number;
+    readonly skipped: number;
+    readonly newTests?: readonly string[];
+    readonly modifiedTests?: readonly string[];
+    readonly deletedTests?: readonly string[];
+    readonly details?: readonly {
+      readonly name: string;
+      readonly status: "passed" | "failed" | "skipped";
+      readonly durationMs?: number;
+      readonly errorMessage?: string;
+    }[];
+  };
+  readonly lintResults: {
+    readonly errorCount: number;
+    readonly warningCount: number;
+    readonly details?: readonly {
+      readonly file: string;
+      readonly line: number;
+      readonly column: number;
+      readonly rule: string;
+      readonly severity: "error" | "warning";
+      readonly message: string;
+    }[];
+  };
+  readonly securityScanResults: {
+    readonly vulnerabilities: readonly {
+      readonly id: string;
+      readonly severity: "critical" | "high" | "medium" | "low";
+      readonly description: string;
+      readonly file?: string;
+      readonly line?: number;
+    }[];
+    readonly totalFindings: number;
+    readonly criticalCount: number;
+    readonly highCount: number;
+  };
+  readonly blastRadius: { readonly files: number; readonly packages: number };
+  readonly protectedSurfaceEdits: readonly string[];
+  readonly migrationImpact: {
+    readonly hasMigrations: boolean;
+    readonly migrationFiles: readonly string[];
+    readonly schemaChanges: readonly string[];
+  };
+  readonly revertabilityClass:
+    | "clean_revert"
+    | "revert_with_migration"
+    | "non_revertable";
+  readonly commandsRun: readonly CommandRecord[];
+  readonly sarifOutput?: string;
+  readonly sbomOutput?: string;
+  readonly testLog?: string;
+  readonly validatorControlFileEdits?: readonly {
+    readonly path: string;
+    readonly category: string;
+    readonly baseRefHash: string;
+    readonly workspaceHash: string;
+  }[];
+}
+
+export interface EvidenceAgentResultData {
+  readonly filesModified: readonly string[];
+  readonly totalCostCents: number;
+  readonly unresolvedAssumptions?: readonly string[];
+  readonly commandsRun?: readonly CommandRecord[];
+}
+
+export interface EvidenceCapabilityData {
+  readonly requiredStatusChecks: readonly { readonly context: string }[];
+}
+
+export interface EvidenceGenerateInput {
+  readonly taskId: string;
+  readonly objective: string;
+  readonly attemptNumber: number;
+  readonly baseSha: string;
+  readonly headSha: string;
+  readonly mergeBaseSha: string;
+  readonly containerId: string;
+  readonly validationResult: EvidenceValidationData;
+  readonly agentResult: EvidenceAgentResultData;
+  readonly capabilitySnapshot: EvidenceCapabilityData;
+  readonly codeownersEntries: readonly CodeownersEntry[];
+  readonly changedFiles: readonly string[];
+  readonly policies: readonly PolicyConfig[];
+}
+
+export interface EvidenceLocatorData {
+  readonly taskId: string;
+  readonly attemptNumber: number;
+  readonly bundleId: string;
+  readonly artifactPrefix: string;
+  readonly evidenceJsonKey: string;
+  readonly manifestKey: string;
+  readonly diffPatchKey: string;
+  readonly sarifKey?: string;
+  readonly sbomKey?: string;
+  readonly testLogKey?: string;
+  readonly createdAt: string;
+}
+
+export interface RiskCategorizationData {
+  readonly hardBlockers: readonly string[];
+  readonly softConcerns: readonly string[];
+  readonly humanJudgmentRequired: readonly string[];
+  readonly informational: readonly string[];
+}
+
+export interface EvidenceGenerateResult {
+  readonly bundleId: string;
+  readonly locator: EvidenceLocatorData;
+  readonly riskSummary: RiskCategorizationData;
+  readonly passed: boolean;
+}
+
+export interface EvidenceActivities {
+  generateAndPersistEvidence(
+    input: EvidenceGenerateInput,
+  ): Promise<EvidenceGenerateResult>;
 }

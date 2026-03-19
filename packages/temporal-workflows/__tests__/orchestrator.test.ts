@@ -212,6 +212,27 @@ const mockActivities = {
     revertabilityClass: "clean_revert",
   }),
   checkValidatorBoundary: async () => [],
+  // Evidence activities (M14)
+  generateAndPersistEvidence: async () => ({
+    bundleId: "bundle-001",
+    locator: {
+      taskId: "t1",
+      attemptNumber: 1,
+      bundleId: "bundle-001",
+      artifactPrefix: "evidence/t1/1/",
+      evidenceJsonKey: "evidence/t1/1/evidence.json",
+      manifestKey: "evidence/t1/1/manifest.json",
+      diffPatchKey: "evidence/t1/1/diff.patch",
+      createdAt: new Date().toISOString(),
+    },
+    riskSummary: {
+      hardBlockers: [],
+      softConcerns: [],
+      humanJudgmentRequired: [],
+      informational: [],
+    },
+    passed: true,
+  }),
 };
 
 /** Create input with unique taskId to prevent child workflow ID collisions. */

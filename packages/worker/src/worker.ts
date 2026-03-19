@@ -6,6 +6,7 @@ import {
   createAuditActivities,
   createBranchLeaseActivity,
   createCostCheckActivity,
+  createEvidenceActivities,
   createGitHubActivities,
   createIndexActivities,
   createKillCheckActivity,
@@ -13,6 +14,7 @@ import {
   createPlanActivities,
   createRedisClient,
   createSandboxActivities,
+  createSandboxSupervisor,
   createTaskActivities,
 } from "@software-factory/temporal-activities";
 import { NativeConnection, Worker } from "@temporalio/worker";
@@ -110,6 +112,23 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       }
     : {};
 
+  // Evidence activities
+  const supervisor = createSandboxSupervisor(docker);
+  const evidenceActivities = config.minioSecretKey
+    ? createEvidenceActivities({
+        db,
+        sandbox: supervisor,
+        artifactStoreConfig: {
+          endpoint: config.minioEndpoint ?? "http://localhost:9000",
+          region: "us-east-1",
+          bucket: config.minioBucket ?? "factory-artifacts",
+          accessKeyId: config.minioAccessKey ?? "factory",
+          secretAccessKey: config.minioSecretKey,
+          forcePathStyle: true,
+        },
+      })
+    : {};
+
   const worker = await Worker.create({
     connection,
     namespace: config.temporalNamespace,
@@ -123,6 +142,7 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...githubActivities,
       ...indexActivities,
       ...llmActivities,
+      ...evidenceActivities,
     },
     interceptors: {
       activity: [() => ({ inbound: new ActivityLogInterceptor() })],
