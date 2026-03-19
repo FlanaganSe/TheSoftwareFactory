@@ -1,11 +1,11 @@
 services:
   postgres:
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   redis:
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
   temporal:
     ports:

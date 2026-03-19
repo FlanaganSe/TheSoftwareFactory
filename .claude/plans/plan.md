@@ -261,12 +261,12 @@ software-factory/
   - [x] Step 5 — Write 4 test files (state-machine, schemas, policy-decision-service, errors) with 141 tests → verify: `pnpm test`
   - [x] Step 6 — Verify all quality checks: typecheck, lint, test, no Node.js imports → verify: `pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add core domain package with Zod schemas, state machine, policy engine, and error types"
-- [ ] **M3: Docker Compose Infrastructure** — Stand up PostgreSQL, Redis, Temporal, MinIO with health checks
+- [x] **M3: Docker Compose Infrastructure** — Stand up PostgreSQL, Redis, Temporal, MinIO with health checks
   - [x] Step 1 — Create `docker-compose.yml` (5 services, health checks, volumes, network, logging), `docker-compose.override.yml` (dev port exposure), `.env.example` → verify: `docker compose config > /dev/null`
   - [x] Step 2 — Create `scripts/init-db.sql` (roles, extensions, temporal DBs) and `scripts/generate-secrets.sh` → verify: `bash -n scripts/generate-secrets.sh`
-  - [ ] Step 3 — Generate secrets, start stack, verify all services healthy → verify: `docker compose ps` shows all healthy (MANUAL: requires Docker daemon)
-  - [ ] Step 4 — Verify Postgres (roles, extensions, checksums, temporal DBs), Redis, MinIO → verify: all QR checks pass (MANUAL: requires Docker daemon)
-  - [ ] Step 5 — Verify data persistence across restart → verify: `docker compose down && docker compose up -d` data persists (MANUAL: requires Docker daemon)
+  - [x] Step 3 — Generate secrets, start stack, verify all services healthy → verify: `docker compose ps` shows all healthy
+  - [x] Step 4 — Verify Postgres (roles, extensions, checksums, temporal DBs), Redis, MinIO → verify: all QR checks pass
+  - [x] Step 5 — Verify data persistence across restart → verify: `docker compose down && docker compose up -d` data persists
   Commit: "feat: add Docker Compose infrastructure with PostgreSQL, Redis, Temporal, and MinIO"
 - [ ] **M4: Database Schema + Migrations** — Create all Drizzle schemas, triggers, RLS policies, seed data, and repository layer
 
