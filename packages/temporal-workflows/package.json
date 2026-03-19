@@ -6,6 +6,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@software-factory/core": "workspace:*"
+    "@software-factory/core": "workspace:*",
+    "@temporalio/workflow": "1.14.1",
+    "async-mutex": "^0.5.0"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "1.14.1",
+    "@temporalio/client": "1.14.1",
+    "@temporalio/worker": "1.14.1",
+    "@temporalio/activity": "1.14.1"
   }
 }

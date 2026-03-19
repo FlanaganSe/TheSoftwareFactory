@@ -10,11 +10,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "pnpm -r run build",
-    "clean": "pnpm -r exec -- rm -rf dist *.tsbuildinfo"
+    "clean": "pnpm -r exec -- rm -rf dist *.tsbuildinfo",
+    "worker:dev": "cd packages/worker && npx tsx src/index.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "@biomejs/biome",
+      "@swc/core",
+      "@temporalio/core-bridge",
       "esbuild",
       "tree-sitter-go",
       "tree-sitter-java",

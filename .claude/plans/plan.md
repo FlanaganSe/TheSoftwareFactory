@@ -312,6 +312,12 @@ software-factory/
 > **Human review gate:** Verify sandbox isolation is correct. Review agent tool execution for safety. Verify Temporal workflows handle failures gracefully.
 
 - [ ] **M9: Temporal Orchestration Core** — Parent/child workflow architecture, worker setup, task queues, signals, basic lifecycle
+  - [ ] Step 1 — Install Temporal deps + safety deps (ioredis, async-mutex) across all 3 packages → verify: `pnpm install && pnpm typecheck`
+  - [ ] Step 2 — Create activity-types.ts (type-only interfaces), signals.ts, and all stub/real phase workflows (orchestrator, intake, clarify, review, 8 stubs) → verify: `pnpm typecheck --filter @software-factory/temporal-workflows`
+  - [ ] Step 3 — Create safety primitives (redis-client, kill-check, cost-check, branch-lease) + DB activities (task-activities, audit-activities) + barrel exports → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
+  - [ ] Step 4 — Create worker process (worker.ts, index.ts, interceptors.ts, config) → verify: `pnpm typecheck --filter @software-factory/worker`
+  - [ ] Step 5 — Write all tests (safety primitives, workflow tests, activity tests) + final verification → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
+  Commit: "feat: add Temporal orchestration core with parent/child workflows, safety primitives, and worker process"
 - [ ] **M10: Docker Sandbox Supervisor** — Container lifecycle (6 phases), network isolation, secret injection, environment caching
 - [ ] **M11: LLM Agent Core** — Vercel AI SDK integration, OpenRouter config, tool execution framework, edit format, context management
 - [ ] **M12: Task Execution Pipeline** — Wire intake → understand → plan → implement loop through Temporal with sandbox + LLM

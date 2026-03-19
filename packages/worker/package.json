@@ -8,7 +8,13 @@
   "dependencies": {
     "@software-factory/core": "workspace:*",
     "@software-factory/db": "workspace:*",
+    "@software-factory/temporal-activities": "workspace:*",
     "@software-factory/temporal-workflows": "workspace:*",
-    "@software-factory/temporal-activities": "workspace:*"
+    "@temporalio/client": "1.14.1",
+    "@temporalio/worker": "1.14.1",
+    "pino": "^9.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.0"
   }
 }
