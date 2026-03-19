@@ -5,9 +5,24 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "dev": "tsx src/app.ts"
+  },
   "dependencies": {
+    "@fastify/sensible": "^6.0.4",
+    "@octokit/webhooks": "^14.2.0",
     "@software-factory/core": "workspace:*",
     "@software-factory/db": "workspace:*",
-    "@software-factory/temporal-activities": "workspace:*"
+    "fastify": "^5.8.2",
+    "fastify-type-provider-zod": "^4.0.2",
+    "zod": "^3.25.17"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^11.13.0",
+    "@types/node": "^22.16.0",
+    "@types/pg": "^8.18.0",
+    "pg": "^8.20.0",
+    "testcontainers": "^11.13.0",
+    "tsx": "^4.20.3"
   }
 }

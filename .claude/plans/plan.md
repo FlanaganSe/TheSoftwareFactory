@@ -268,14 +268,14 @@ software-factory/
   - [x] Step 4 — Verify Postgres (roles, extensions, checksums, temporal DBs), Redis, MinIO → verify: all QR checks pass
   - [x] Step 5 — Verify data persistence across restart → verify: `docker compose down && docker compose up -d` data persists
   Commit: "feat: add Docker Compose infrastructure with PostgreSQL, Redis, Temporal, and MinIO"
-- [ ] **M4: Database Schema + Migrations** — Create all Drizzle schemas, triggers, RLS policies, seed data, and repository layer
-  - [ ] Step 1 — Install deps (drizzle-orm, drizzle-kit, pg, @types/pg, neverthrow), create connection.ts → verify: `pnpm install && pnpm typecheck`
-  - [ ] Step 2 — Create all schema files (17 files: enums, 14 tables, barrel) → verify: `pnpm typecheck`
-  - [ ] Step 3 — Create encryption utilities + content hash → verify: `pnpm typecheck`
-  - [ ] Step 4 — Create repository layer (7 repos, all Result<T,E>) → verify: `pnpm typecheck`
-  - [ ] Step 5 — Create drizzle.config.ts, generate + apply migrations with custom SQL (trigger, RLS, seed) → verify: migrations apply, tables exist
-  - [ ] Step 6 — Write integration tests (6 test files, Testcontainers) → verify: `pnpm test --filter @software-factory/db`
-  - [ ] Step 7 — Full quality pass → verify: `pnpm typecheck && pnpm lint && pnpm test`
+- [x] **M4: Database Schema + Migrations** — Create all Drizzle schemas, triggers, RLS policies, seed data, and repository layer
+  - [x] Step 1 — Install deps (drizzle-orm, drizzle-kit, pg, @types/pg, neverthrow), create connection.ts → verify: `pnpm install && pnpm typecheck`
+  - [x] Step 2 — Create all schema files (17 files: enums, 14 tables, barrel) → verify: `pnpm typecheck`
+  - [x] Step 3 — Create encryption utilities + content hash → verify: `pnpm typecheck`
+  - [x] Step 4 — Create repository layer (7 repos, all Result<T,E>) → verify: `pnpm typecheck`
+  - [x] Step 5 — Create drizzle.config.ts, generate + apply migrations with custom SQL (trigger, RLS, seed) → verify: migrations apply, tables exist
+  - [x] Step 6 — Write integration tests (6 test files, Testcontainers) → verify: `pnpm test --filter @software-factory/db`
+  - [x] Step 7 — Full quality pass → verify: `pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add database schema, migrations, encryption, and repository layer"
 
 ### Phase 1: Observer Mode — *"Read-only value, zero risk"*
@@ -283,7 +283,13 @@ software-factory/
 > **Goal:** Scan repositories and produce readiness reports WITHOUT executing any code or creating any PRs. This is the Observer Mode product surface that delivers value on day 1.
 > **Human review gate:** Verify GitHub integration works correctly on a real test repo. Review capability scan accuracy.
 
-- [ ] **M5: GitHub App Foundation** — App registration flow, JWT auth, installation tokens, webhook receiver with signature verification
+- [x] **M5: GitHub App Foundation** — App registration flow, JWT auth, installation tokens, webhook receiver with signature verification
+  - [x] Step 1 — Install deps (api: fastify, fastify-type-provider-zod, @fastify/sensible, @octokit/webhooks; temporal-activities: @octokit/rest, @octokit/auth-app, @octokit/graphql) → verify: `pnpm install`
+  - [x] Step 2 — Create API server core (server.ts, app.ts, middleware/auth.ts, middleware/require-role.ts, middleware/error-handler.ts, bootstrap/seed-admin-key.ts) + add listApiKeys to db repo → verify: `pnpm typecheck --filter @software-factory/api`
+  - [x] Step 3 — Create API routes (health, webhooks, api-keys, tasks stubs, setup) → verify: `pnpm typecheck --filter @software-factory/api`
+  - [x] Step 4 — Create GitHub auth modules (credential-broker, client, rate-limiter) in temporal-activities → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
+  - [x] Step 5 — Write tests (API: health, auth, role-auth, webhooks, api-keys; GitHub: credential-broker, rate-limiter, client) → verify: `pnpm test`
+  Commit: "feat: add GitHub App foundation, API server with auth, webhooks, and role enforcement"
 - [ ] **M6: Repository Capability Scan** — 10-step scan producing structured report (rulesets, CODEOWNERS, merge queue, signed commits)
 - [ ] **M7: Code Indexing Pipeline** — tree-sitter parsing, symbol extraction, repo map generation, governance filter
 - [ ] **M8: Observer Mode CLI** — `factory repo scan` command producing readiness report with setup contract generation

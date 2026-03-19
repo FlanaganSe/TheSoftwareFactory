@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FactoryResult } from "@software-factory/core";
 import { createFactoryError } from "@software-factory/core";
-import { and, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { err, ok } from "neverthrow";
 import type { DbInstance } from "../connection.js";
 import { apiKeys } from "../schema/api-keys.js";
@@ -85,6 +85,61 @@ export async function validateApiKey(
       createFactoryError(
         "unknown_internal",
         `Failed to validate API key: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+  }
+}
+
+export interface ApiKeyListItem {
+  readonly id: string;
+  readonly label: string;
+  readonly role: ApiKeyRow["role"];
+  readonly createdBy: string;
+  readonly expiresAt: Date | null;
+  readonly lastUsedAt: Date | null;
+  readonly isActive: boolean | null;
+  readonly createdAt: Date;
+}
+
+export async function listApiKeys(
+  db: DbInstance,
+): Promise<FactoryResult<readonly ApiKeyListItem[]>> {
+  try {
+    const rows = await db
+      .select({
+        id: apiKeys.id,
+        label: apiKeys.label,
+        role: apiKeys.role,
+        createdBy: apiKeys.createdBy,
+        expiresAt: apiKeys.expiresAt,
+        lastUsedAt: apiKeys.lastUsedAt,
+        isActive: apiKeys.isActive,
+        createdAt: apiKeys.createdAt,
+      })
+      .from(apiKeys)
+      .orderBy(desc(apiKeys.createdAt));
+    return ok(rows);
+  } catch (e) {
+    return err(
+      createFactoryError(
+        "unknown_internal",
+        `Failed to list API keys: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+  }
+}
+
+export async function countApiKeys(
+  db: DbInstance,
+): Promise<FactoryResult<number>> {
+  try {
+    const [row] = await db.select({ value: count() }).from(apiKeys);
+    return ok(row.value);
+  } catch (e) {
+    return err(
+      createFactoryError(
+        "unknown_internal",
+        `Failed to count API keys: ${e instanceof Error ? e.message : String(e)}`,
       ),
     );
   }
