@@ -189,6 +189,41 @@ export type { FactoryConfig } from "./schemas/config.js";
 export { TrustedBaseContextSchema } from "./trusted-context.js";
 export type { TrustedBaseContext } from "./trusted-context.js";
 
+// === Capability Scan ===
+export {
+  BypassActorSchema,
+  RequiredStatusCheckSchema,
+  RequiredWorkflowSchema,
+  PushRestrictionsSchema,
+  CodeownersEntrySchema,
+  CODEOWNERS_LOCATIONS,
+  CodeownersSchema,
+  MergeQueueConfigSchema,
+  BranchProtectionSchema,
+  RulesetRuleSchema,
+  RULESET_RULE_TYPES,
+  RulesetSchema,
+  DANGEROUS_TRIGGERS,
+  DangerousWorkflowSchema,
+  CapabilitySnapshotSchema,
+} from "./schemas/capability.js";
+export type {
+  BypassActor,
+  RequiredStatusCheck,
+  RequiredWorkflow,
+  PushRestrictions,
+  CodeownersEntry,
+  Codeowners,
+  MergeQueueConfig,
+  BranchProtection,
+  RulesetRule,
+  RulesetRuleType,
+  Ruleset,
+  DangerousTrigger,
+  DangerousWorkflow,
+  CapabilitySnapshot,
+} from "./schemas/capability.js";
+
 // === Errors ===
 export {
   ERROR_CODES,

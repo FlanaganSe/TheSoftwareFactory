@@ -134,10 +134,22 @@ importers:
       '@software-factory/db':
         specifier: workspace:*
         version: link:../db
+      neverthrow:
+        specifier: ^8.2.0
+        version: 8.2.0
+      picomatch:
+        specifier: ^4.0.3
+        version: 4.0.3
+      yaml:
+        specifier: ^2.8.2
+        version: 2.8.2
     devDependencies:
       '@types/node':
         specifier: ^22.16.0
         version: 22.19.15
+      '@types/picomatch':
+        specifier: ^4.0.2
+        version: 4.0.2
 
   packages/temporal-workflows:
     dependencies:

@@ -10,9 +10,13 @@
     "@octokit/graphql": "^9.0.3",
     "@octokit/rest": "^22.0.1",
     "@software-factory/core": "workspace:*",
-    "@software-factory/db": "workspace:*"
+    "@software-factory/db": "workspace:*",
+    "neverthrow": "^8.2.0",
+    "picomatch": "^4.0.3",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "@types/node": "^22.16.0"
+    "@types/node": "^22.16.0",
+    "@types/picomatch": "^4.0.2"
   }
 }
