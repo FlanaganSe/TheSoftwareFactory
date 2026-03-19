@@ -24,6 +24,7 @@ import { Mutex } from "async-mutex";
 import type { ImplementResult } from "./phases/implement.js";
 import type { SetupResult } from "./phases/setup.js";
 import type { UnderstandResult } from "./phases/understand.js";
+import type { ValidateResult } from "./phases/validate.js";
 import {
   approveSignal,
   changesRequestedSignal,
@@ -62,6 +63,7 @@ export interface TaskWorkflowInput {
   readonly capabilitySnapshot?: CapabilitySnapshot;
   readonly setupResult?: SetupResult;
   readonly implementResult?: ImplementResult;
+  readonly validateResult?: ValidateResult;
 }
 
 // ─── Phase ordering ───
@@ -109,6 +111,7 @@ export async function taskOrchestrator(
   let planText: string | undefined;
   let setupResult: SetupResult | undefined = input.setupResult;
   let implementResult: ImplementResult | undefined = input.implementResult;
+  let validateResult: ValidateResult | undefined = input.validateResult;
 
   // ─── Signal Handlers ───
 
@@ -235,6 +238,7 @@ export async function taskOrchestrator(
         capabilitySnapshot,
         setupResult,
         implementResult,
+        validateResult,
       });
     }
 
@@ -426,10 +430,36 @@ export async function taskOrchestrator(
         });
       }
     } else if (phase === "validate") {
-      await executeChild("validatePhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId }],
-      });
+      if (patched("m13-real-validate")) {
+        const defaultContext: TrustedBaseContext = trustedContext ?? {
+          baseSha: "HEAD",
+          setupContract: null,
+          policySnapshot: [],
+          behavioralControlFiles: {},
+          validationCommandSources: [],
+          capturedAt: new Date().toISOString(),
+        };
+
+        validateResult = await executeChild("validatePhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              containerId: setupResult?.sandboxInstance?.containerId ?? "",
+              trustedContext: defaultContext,
+              changedFiles: implementResult?.agentResult?.filesModified ?? [],
+              indexVersionId: understandResult?.indexVersionId ?? "",
+              policies: defaultContext.policySnapshot,
+            },
+          ],
+        });
+      } else {
+        await executeChild("validatePhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId }],
+        });
+      }
     } else if (phase === "evidence") {
       await executeChild("evidencePhase", {
         workflowId: childId,

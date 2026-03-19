@@ -124,6 +124,45 @@ export {
   createSandboxActivities,
 } from "./sandbox/index.js";
 
+// === Validation ===
+export { createValidationActivities } from "./validation/index.js";
+export type { ValidationActivityDeps } from "./validation/index.js";
+export {
+  runTests,
+  parseTestOutput,
+  parseVitestJest,
+  parsePytest,
+  parseGoTest,
+  parseRustTest,
+  parseJunitXml,
+  runLinter,
+  parseLintOutput,
+  parseBiomeJson,
+  parseEslintJson,
+  parseLintFallback,
+  runSecurityScan,
+  parseSarifFindings,
+  parseGrypeJson,
+  parseSyftSpdxJson,
+  computeBlastRadius,
+  checkValidatorBoundary,
+  categorizeControlFile,
+  computeHash,
+} from "./validation/index.js";
+export type {
+  TestRunnerConfig,
+  TestRunResult,
+  ParsedCounts,
+  LintRunnerConfig,
+  LintRunResult,
+  ParsedLint,
+  SecurityScanConfig,
+  SecurityScanResult,
+  BlastRadiusConfig,
+  BlastRadiusResult,
+  ValidatorBoundaryConfig,
+} from "./validation/index.js";
+
 // === LLM Agent ===
 export {
   createProvider,

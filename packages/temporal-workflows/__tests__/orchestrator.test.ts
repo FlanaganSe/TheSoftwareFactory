@@ -166,6 +166,52 @@ const mockActivities = {
     totalInputTokens: 0,
     totalOutputTokens: 0,
   }),
+  // Validation activities (M13)
+  getChangedFiles: async () => [],
+  runTests: async () => ({
+    testResults: {
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      newTests: [],
+      modifiedTests: [],
+      deletedTests: [],
+      details: [],
+    },
+    exitCode: 0,
+    commandRecord: { command: "npm test", exitCode: 0, durationMs: 100 },
+  }),
+  runLinter: async () => ({
+    lintResults: { errorCount: 0, warningCount: 0, details: [] },
+    exitCode: 0,
+    commandRecord: {
+      command: "npx biome check .",
+      exitCode: 0,
+      durationMs: 50,
+    },
+  }),
+  runSecurityScan: async () => ({
+    securityScanResults: {
+      vulnerabilities: [],
+      totalFindings: 0,
+      criticalCount: 0,
+      highCount: 0,
+    },
+    commandsRun: [],
+  }),
+  computeBlastRadius: async () => ({
+    blastRadius: { files: 0, packages: 0 },
+    filesChanged: [],
+    packagesAffected: [],
+    protectedSurfaceEdits: [],
+    migrationImpact: {
+      hasMigrations: false,
+      migrationFiles: [],
+      schemaChanges: [],
+    },
+    revertabilityClass: "clean_revert",
+  }),
+  checkValidatorBoundary: async () => [],
 };
 
 /** Create input with unique taskId to prevent child workflow ID collisions. */

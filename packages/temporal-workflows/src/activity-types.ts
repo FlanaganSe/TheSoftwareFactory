@@ -6,11 +6,20 @@
  */
 
 import type {
+  BlastRadius,
   CapabilitySnapshot,
+  CommandRecord,
+  LintResults,
+  MigrationImpact,
   PolicyConfig,
+  RevertabilityClass,
+  SBOMResult,
+  SecurityScanResults,
   SetupContract,
   TaskState,
+  TestResults,
   TrustedBaseContext,
+  ValidatorControlFileEdit,
 } from "@software-factory/core";
 
 // ─── DB Types (serializable representations) ───
@@ -270,4 +279,84 @@ export interface PlanActivities {
     relevantFiles: FileContentData[],
     model: string,
   ): Promise<{ plan: string; estimatedFiles: string[] }>;
+}
+
+// ─── Validation Activities ───
+
+export interface TestRunnerConfigData {
+  readonly containerId: string;
+  readonly testCommand: string;
+  readonly workingDir: string;
+  readonly timeoutMs: number;
+  readonly runtimeSecrets?: Readonly<Record<string, string>>;
+}
+
+export interface TestRunResultData {
+  readonly testResults: TestResults;
+  readonly exitCode: number;
+  readonly commandRecord: CommandRecord;
+}
+
+export interface LintRunnerConfigData {
+  readonly containerId: string;
+  readonly lintCommand: string;
+  readonly workingDir: string;
+  readonly timeoutMs: number;
+}
+
+export interface LintRunResultData {
+  readonly lintResults: LintResults;
+  readonly exitCode: number;
+  readonly commandRecord: CommandRecord;
+}
+
+export interface SecurityScanConfigData {
+  readonly containerId: string;
+  readonly changedFiles: readonly string[];
+  readonly semgrepConfig?: string;
+  readonly workingDir: string;
+  readonly timeoutMs: number;
+}
+
+export interface SecurityScanResultData {
+  readonly securityScanResults: SecurityScanResults;
+  readonly sarifOutput?: string;
+  readonly sbom?: SBOMResult;
+  readonly vulnerabilityScan?: SecurityScanResults;
+  readonly commandsRun: readonly CommandRecord[];
+}
+
+export interface BlastRadiusConfigData {
+  readonly indexVersionId: string;
+  readonly changedFiles: readonly string[];
+  readonly policies: readonly PolicyConfig[];
+}
+
+export interface BlastRadiusResultData {
+  readonly blastRadius: BlastRadius;
+  readonly filesChanged: readonly string[];
+  readonly packagesAffected: readonly string[];
+  readonly protectedSurfaceEdits: readonly string[];
+  readonly migrationImpact: MigrationImpact;
+  readonly revertabilityClass: RevertabilityClass;
+}
+
+export interface ValidatorBoundaryConfigData {
+  readonly containerId: string;
+  readonly trustedContext: TrustedBaseContext;
+}
+
+export interface ValidationActivities {
+  runTests(config: TestRunnerConfigData): Promise<TestRunResultData>;
+  runLinter(config: LintRunnerConfigData): Promise<LintRunResultData>;
+  runSecurityScan(
+    config: SecurityScanConfigData,
+  ): Promise<SecurityScanResultData>;
+  computeBlastRadius(
+    config: BlastRadiusConfigData,
+  ): Promise<BlastRadiusResultData>;
+  checkValidatorBoundary(
+    config: ValidatorBoundaryConfigData,
+  ): Promise<ValidatorControlFileEdit[]>;
+  getChangedFiles(containerId: string, baseSha: string): Promise<string[]>;
 }

@@ -81,6 +81,20 @@ export type {
   EvidenceBundle,
 } from "./schemas/evidence.js";
 
+// === Validation ===
+export {
+  SBOMEntrySchema,
+  SBOMResultSchema,
+  ValidatorControlFileEditSchema,
+  ValidationResultSchema,
+} from "./schemas/validation.js";
+export type {
+  SBOMEntry,
+  SBOMResult,
+  ValidatorControlFileEdit,
+  ValidationResult,
+} from "./schemas/validation.js";
+
 // === Audit ===
 export {
   AUDIT_ACTION_TYPES,

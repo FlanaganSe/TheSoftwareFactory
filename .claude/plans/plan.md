@@ -345,7 +345,13 @@ software-factory/
 > **Goal:** Validate code changes, generate evidence packets, and enable human review through the CLI.
 > **Human review gate:** Review evidence packet quality. Verify approval flow works correctly. Test rejection/re-do cycle.
 
-- [ ] **M13: Validation Pipeline** — Test execution in sandbox, lint, security scanning (Semgrep/Syft/Grype), blast radius analysis
+- [x] **M13: Validation Pipeline** — Test execution in sandbox, lint, security scanning (Semgrep/Syft/Grype), blast radius analysis
+  - [x] Step 1 — Create validation schemas (core) + activity type interfaces → verify: `pnpm --filter @software-factory/core typecheck`
+  - [x] Step 2 — Create validation activity implementations (test-runner, lint-runner, security-scanner, blast-radius, validator-boundary) + activity wrapper → verify: `pnpm --filter @software-factory/temporal-activities typecheck`
+  - [x] Step 3 — Replace validate phase stub with real workflow + update orchestrator → verify: `pnpm typecheck`
+  - [x] Step 4 — Write unit tests (parsers, blast radius, boundary) + workflow tests + schema tests → verify: `pnpm test`
+  - [x] Step 5 — Final verification: lint, typecheck, full test suite → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
+  Commit: "feat: add validation pipeline with trusted validator boundary, test/lint/security runners, and blast radius analysis"
 - [ ] **M14: Evidence Generation** — Evidence packet schema, annotated diffs, risk summary, artifact storage in MinIO
 - [ ] **M15: Human Review Flow** — CLI `evidence` / `approve` / `reject` / `changes` commands, review state management
 
