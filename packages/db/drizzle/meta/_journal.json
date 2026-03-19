@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1773886341643,
+      "tag": "0000_wonderful_wallop",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773886341700,
+      "tag": "0001_custom_triggers_rls_seeds",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773887020132,
+      "tag": "0002_last_argent",
+      "breakpoints": true
+    }
+  ]
+}

@@ -5,7 +5,20 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
   "dependencies": {
-    "@software-factory/core": "workspace:*"
+    "@software-factory/core": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "neverthrow": "^8.2.0",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^11.13.0",
+    "@types/pg": "^8.18.0",
+    "drizzle-kit": "^0.31.10",
+    "testcontainers": "^11.13.0"
   }
 }

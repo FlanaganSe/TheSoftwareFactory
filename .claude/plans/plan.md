@@ -269,6 +269,14 @@ software-factory/
   - [x] Step 5 — Verify data persistence across restart → verify: `docker compose down && docker compose up -d` data persists
   Commit: "feat: add Docker Compose infrastructure with PostgreSQL, Redis, Temporal, and MinIO"
 - [ ] **M4: Database Schema + Migrations** — Create all Drizzle schemas, triggers, RLS policies, seed data, and repository layer
+  - [ ] Step 1 — Install deps (drizzle-orm, drizzle-kit, pg, @types/pg, neverthrow), create connection.ts → verify: `pnpm install && pnpm typecheck`
+  - [ ] Step 2 — Create all schema files (17 files: enums, 14 tables, barrel) → verify: `pnpm typecheck`
+  - [ ] Step 3 — Create encryption utilities + content hash → verify: `pnpm typecheck`
+  - [ ] Step 4 — Create repository layer (7 repos, all Result<T,E>) → verify: `pnpm typecheck`
+  - [ ] Step 5 — Create drizzle.config.ts, generate + apply migrations with custom SQL (trigger, RLS, seed) → verify: migrations apply, tables exist
+  - [ ] Step 6 — Write integration tests (6 test files, Testcontainers) → verify: `pnpm test --filter @software-factory/db`
+  - [ ] Step 7 — Full quality pass → verify: `pnpm typecheck && pnpm lint && pnpm test`
+  Commit: "feat: add database schema, migrations, encryption, and repository layer"
 
 ### Phase 1: Observer Mode — *"Read-only value, zero risk"*
 
