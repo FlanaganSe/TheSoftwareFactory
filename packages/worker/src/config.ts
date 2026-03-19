@@ -3,6 +3,7 @@ export interface WorkerConfig {
   readonly temporalNamespace: string;
   readonly databaseUrl: string;
   readonly redisUrl: string;
+  readonly dockerSocketPath?: string;
 }
 
 export function loadWorkerConfig(): WorkerConfig {
@@ -21,5 +22,6 @@ export function loadWorkerConfig(): WorkerConfig {
     temporalNamespace: process.env.TEMPORAL_NAMESPACE ?? "default",
     databaseUrl,
     redisUrl,
+    dockerSocketPath: process.env.DOCKER_SOCKET_PATH,
   };
 }

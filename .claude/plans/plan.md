@@ -318,7 +318,13 @@ software-factory/
   - [x] Step 4 — Create worker process (worker.ts, index.ts, interceptors.ts, config) → verify: `pnpm typecheck --filter @software-factory/worker`
   - [x] Step 5 — Write all tests (safety primitives, workflow tests, activity tests) + final verification → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add Temporal orchestration core with parent/child workflows, safety primitives, and worker process"
-- [ ] **M10: Docker Sandbox Supervisor** — Container lifecycle (6 phases), network isolation, secret injection, environment caching
+- [x] **M10: Docker Sandbox Supervisor** — Container lifecycle (6 phases), network isolation, secret injection, environment caching
+  - [x] Step 1 — Install dockerode deps, create secrets.ts, cache.ts, exec.ts (pure functions) → verify: `pnpm typecheck`
+  - [x] Step 2 — Create network.ts, monitor.ts, cleanup.ts → verify: `pnpm typecheck`
+  - [x] Step 3 — Create supervisor.ts (6-phase lifecycle orchestrator) → verify: `pnpm typecheck`
+  - [x] Step 4 — Create activities.ts, update activity-types.ts, worker.ts, index.ts → verify: `pnpm typecheck && pnpm lint`
+  - [x] Step 5 — Write unit tests (secrets, cache, monitor) + integration tests (supervisor, network, cache) → verify: `pnpm test`
+  Commit: "feat: add Docker sandbox supervisor with 6-phase lifecycle, network isolation, and secret injection"
 - [ ] **M11: LLM Agent Core** — Vercel AI SDK integration, OpenRouter config, tool execution framework, edit format, context management
 - [ ] **M12: Task Execution Pipeline** — Wire intake → understand → plan → implement loop through Temporal with sandbox + LLM
 

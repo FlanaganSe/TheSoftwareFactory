@@ -12,9 +12,11 @@
     "@software-factory/temporal-workflows": "workspace:*",
     "@temporalio/client": "1.14.1",
     "@temporalio/worker": "1.14.1",
+    "dockerode": "^4.0.9",
     "pino": "^9.7.0"
   },
   "devDependencies": {
+    "@types/dockerode": "^4.0.1",
     "@types/node": "^22.16.0"
   }
 }

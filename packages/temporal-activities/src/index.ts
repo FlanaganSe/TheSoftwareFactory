@@ -80,3 +80,36 @@ export type {
   FilterResult,
   IndexedFile,
 } from "./indexing/index.js";
+
+// === Docker Sandbox ===
+export { createSandboxSupervisor } from "./sandbox/index.js";
+export type {
+  SandboxConfig,
+  SandboxInstance,
+  ResourceLimits,
+  ResolvedEnvironment,
+  SandboxSupervisor,
+  ExecResult,
+  ExecOptions,
+  SecretBindings,
+  MonitorHandle,
+  MonitorOptions,
+  MonitorStatus,
+  MonitorReason,
+} from "./sandbox/index.js";
+export {
+  execInContainer,
+  buildExecEnv,
+  buildToolExecEnv,
+  verifyNoSecretLeakage,
+  computeCacheKey,
+  getCachedImage,
+  cacheContainer,
+  invalidateCache,
+  createNetworkManager,
+  createMonitor,
+  checkOomKilled,
+  destroyContainer,
+  cleanupOrphans,
+  createSandboxActivities,
+} from "./sandbox/index.js";

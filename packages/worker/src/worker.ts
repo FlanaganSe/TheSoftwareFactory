@@ -6,9 +6,11 @@ import {
   createCostCheckActivity,
   createKillCheckActivity,
   createRedisClient,
+  createSandboxActivities,
   createTaskActivities,
 } from "@software-factory/temporal-activities";
 import { NativeConnection, Worker } from "@temporalio/worker";
+import Docker from "dockerode";
 import type { WorkerConfig } from "./config.js";
 import { ActivityLogInterceptor } from "./interceptors.js";
 
@@ -31,6 +33,10 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
     ...createCostCheckActivity(redis),
     ...createBranchLeaseActivity(redis),
   };
+  const docker = new Docker({
+    socketPath: config.dockerSocketPath ?? "/var/run/docker.sock",
+  });
+  const sandboxActivities = createSandboxActivities(docker);
 
   const worker = await Worker.create({
     connection,
@@ -41,6 +47,7 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...taskActivities,
       ...auditActivities,
       ...safetyActivities,
+      ...sandboxActivities,
     },
     interceptors: {
       activity: [() => ({ inbound: new ActivityLogInterceptor() })],

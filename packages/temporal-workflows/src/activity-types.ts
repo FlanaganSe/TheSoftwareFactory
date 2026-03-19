@@ -110,10 +110,30 @@ export interface SafetyActivities {
   recordCost(taskId: string, costCents: number): Promise<CostStatus>;
 }
 
-// ─── Stub interfaces for future milestones ───
+// ─── Sandbox Activities ───
+
+export interface SandboxExecResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly durationMs: number;
+}
+
+export interface SandboxInstanceRef {
+  readonly containerId: string;
+  readonly phase: string;
+  readonly labels: Record<string, string>;
+}
 
 export interface SandboxActivities {
-  createSandbox(config: unknown): Promise<unknown>;
+  provisionSandbox(config: unknown): Promise<SandboxInstanceRef>;
+  execInSandbox(
+    containerId: string,
+    cmd: string[],
+    secrets?: Record<string, string>,
+  ): Promise<SandboxExecResult>;
+  destroySandbox(containerId: string): Promise<void>;
+  cleanupOrphans(): Promise<number>;
 }
 
 export interface GitHubActivities {
