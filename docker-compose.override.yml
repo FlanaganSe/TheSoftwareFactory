@@ -1,0 +1,21 @@
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  temporal:
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    ports:
+      - "8080:8080"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
