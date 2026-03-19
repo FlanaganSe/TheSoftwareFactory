@@ -1,27 +1,26 @@
 import { Redis } from "ioredis";
-import { GenericContainer, type StartedTestContainer } from "testcontainers";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  inject,
+  it,
+} from "vitest";
 import { createBranchLeaseActivity } from "../../src/safety/branch-lease.js";
 
-let container: StartedTestContainer;
 let redis: Redis;
 let activities: ReturnType<typeof createBranchLeaseActivity>;
 
 beforeAll(async () => {
-  container = await new GenericContainer("redis:7-alpine")
-    .withExposedPorts(6379)
-    .start();
-  redis = new Redis({
-    host: container.getHost(),
-    port: container.getMappedPort(6379),
-    lazyConnect: false,
-  });
+  const redisUrl = inject("redisUrl");
+  redis = new Redis(redisUrl, { lazyConnect: false });
   activities = createBranchLeaseActivity(redis);
-}, 60_000);
+});
 
 afterAll(async () => {
-  await redis.quit();
-  await container.stop();
+  await redis?.quit();
 });
 
 beforeEach(async () => {

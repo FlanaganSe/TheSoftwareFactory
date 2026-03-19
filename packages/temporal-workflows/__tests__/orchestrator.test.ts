@@ -193,7 +193,7 @@ describe("taskOrchestrator", () => {
       // Signal the child review workflow directly
       // Child ID = task-{taskId}-review
       const reviewHandle = testEnv.client.workflow.getHandle(
-        "task-approve1-review",
+        "task-approve1-review-0",
       );
 
       // Poll until child review workflow exists
@@ -237,7 +237,7 @@ describe("taskOrchestrator", () => {
       });
 
       const reviewHandle = testEnv.client.workflow.getHandle(
-        "task-reject1-review",
+        "task-reject1-review-0",
       );
 
       for (let i = 0; i < 50; i++) {
@@ -284,7 +284,7 @@ describe("taskOrchestrator", () => {
 
       // First review: send changes_requested
       const review1Handle = testEnv.client.workflow.getHandle(
-        "task-changes1-review",
+        "task-changes1-review-0",
       );
       for (let i = 0; i < 50; i++) {
         await new Promise((r) => setTimeout(r, 200));
@@ -303,19 +303,16 @@ describe("taskOrchestrator", () => {
       }
 
       // After changes_requested, the orchestrator loops back to implement.
-      // The second review child will have the SAME ID (task-changes1-review)
-      // because the orchestrator generates IDs from phase name.
-      // We need to wait for a NEW review child to start.
+      // phaseIteration increments to 1, so the second review child ID is review-1.
       await new Promise((r) => setTimeout(r, 1000));
 
       // Check phaseIteration increased
       const progress = await handle.query(getProgressQuery);
       expect(progress.phaseIteration).toBeGreaterThanOrEqual(1);
 
-      // Approve the second review to let workflow complete
-      // The second review child has the same ID pattern
+      // Approve the second review (iteration 1) to let workflow complete
       const review2Handle = testEnv.client.workflow.getHandle(
-        "task-changes1-review",
+        "task-changes1-review-1",
       );
       for (let i = 0; i < 50; i++) {
         await new Promise((r) => setTimeout(r, 200));

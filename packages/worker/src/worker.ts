@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { createDb } from "@software-factory/db";
 import {
   createAuditActivities,
@@ -9,6 +10,9 @@ import {
 } from "@software-factory/temporal-activities";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import type { WorkerConfig } from "./config.js";
+import { ActivityLogInterceptor } from "./interceptors.js";
+
+const require = createRequire(import.meta.url);
 
 export async function createWorker(config: WorkerConfig): Promise<Worker> {
   const connection = await NativeConnection.connect({
@@ -37,6 +41,9 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...taskActivities,
       ...auditActivities,
       ...safetyActivities,
+    },
+    interceptors: {
+      activity: [() => ({ inbound: new ActivityLogInterceptor() })],
     },
   });
 

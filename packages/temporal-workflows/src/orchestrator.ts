@@ -81,6 +81,7 @@ export async function taskOrchestrator(
   let currentState: TaskState = "created";
   const attemptNumber = input.attemptNumber ?? 1;
   let phaseIteration = input.phaseIteration ?? 0;
+  let costBudgetCents = input.config.costBudgetCents;
   const costCents = 0;
   const startedAt = new Date().toISOString();
   let lastActivityAt = startedAt;
@@ -96,6 +97,11 @@ export async function taskOrchestrator(
       release();
     }
   });
+
+  // These handlers exist at the parent level to prevent "unhandled signal" warnings.
+  // Actual signal processing for approve/reject/changes_requested/clarify happens
+  // in child workflows (review, clarify) which register their own handlers.
+  // The parent tracks lastActivityAt for progress reporting.
 
   setHandler(approveSignal, async () => {
     const release = await mutex.acquire();
@@ -142,9 +148,12 @@ export async function taskOrchestrator(
     }
   });
 
-  setHandler(costOverrideSignal, async () => {
+  // costOverrideSignal is handled at the parent level since it modifies
+  // the workflow-wide budget, not a phase-specific concern.
+  setHandler(costOverrideSignal, async ({ newBudgetCents }) => {
     const release = await mutex.acquire();
     try {
+      costBudgetCents = newBudgetCents;
       lastActivityAt = new Date().toISOString();
     } finally {
       release();
@@ -166,6 +175,7 @@ export async function taskOrchestrator(
       startedAt,
       lastActivityAt,
       costCents,
+      costBudgetCents,
     }),
   );
 
@@ -204,7 +214,16 @@ export async function taskOrchestrator(
     currentPhase = phase;
     lastActivityAt = new Date().toISOString();
 
-    const childId = `task-${input.taskId}-${phase}`;
+    // Phases that repeat on changes_requested need iteration in the ID
+    // to avoid Temporal's workflow ID uniqueness constraint
+    const needsIteration =
+      phase === "implement" ||
+      phase === "validate" ||
+      phase === "evidence" ||
+      phase === "review";
+    const childId = needsIteration
+      ? `task-${input.taskId}-${phase}-${phaseIteration}`
+      : `task-${input.taskId}-${phase}`;
 
     if (phase === "intake") {
       const intakeResult = await executeChild("intakePhase", {

@@ -53,4 +53,5 @@ export interface WorkflowProgress {
   readonly startedAt: string;
   readonly lastActivityAt: string;
   readonly costCents: number;
+  readonly costBudgetCents: number;
 }

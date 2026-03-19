@@ -19,8 +19,8 @@ export interface TaskRecord {
   readonly repoId: string;
   readonly autonomyLevel: string;
   readonly createdBy: string;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export interface CreateTaskInput {

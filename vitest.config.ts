@@ -4,5 +4,10 @@ export default defineConfig({
   test: {
     projects: ["packages/*/vitest.config.ts"],
     passWithNoTests: true,
+    // Limit concurrent worker processes across all workspace projects.
+    // Without this, vitest uses one worker per CPU core (11 on this machine),
+    // which starts too many Testcontainers/Temporal servers simultaneously.
+    // See: https://vitest.dev/config/#maxworkers
+    maxWorkers: "50%",
   },
 });
