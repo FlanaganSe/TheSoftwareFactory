@@ -35,6 +35,9 @@ importers:
       '@software-factory/db':
         specifier: workspace:*
         version: link:../db
+      '@temporalio/client':
+        specifier: 1.14.1
+        version: 1.14.1
       fastify:
         specifier: ^5.8.2
         version: 5.8.2

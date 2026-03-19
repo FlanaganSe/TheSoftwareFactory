@@ -4,18 +4,26 @@
  * and handling signals/queries at the top level.
  */
 
-import type { TaskState } from "@software-factory/core";
+import type {
+  CapabilitySnapshot,
+  TaskState,
+  TrustedBaseContext,
+} from "@software-factory/core";
 import {
   CancellationScope,
   allHandlersFinished,
   condition,
   continueAsNew,
   executeChild,
+  patched,
   setHandler,
   workflowInfo,
 } from "@temporalio/workflow";
 import { Mutex } from "async-mutex";
 
+import type { ImplementResult } from "./phases/implement.js";
+import type { SetupResult } from "./phases/setup.js";
+import type { UnderstandResult } from "./phases/understand.js";
 import {
   approveSignal,
   changesRequestedSignal,
@@ -41,12 +49,19 @@ export interface WorkflowConfig {
 export interface TaskWorkflowInput {
   readonly taskId: string;
   readonly repoId: string;
+  readonly repoOwner: string;
+  readonly repoName: string;
   readonly objective: string;
   readonly autonomyLevel: "L0" | "L1" | "L2";
   readonly config: WorkflowConfig;
   readonly resumeFromPhase?: string;
   readonly attemptNumber?: number;
   readonly phaseIteration?: number;
+  // Persisted state for Continue-As-New
+  readonly trustedContext?: TrustedBaseContext;
+  readonly capabilitySnapshot?: CapabilitySnapshot;
+  readonly setupResult?: SetupResult;
+  readonly implementResult?: ImplementResult;
 }
 
 // ─── Phase ordering ───
@@ -82,9 +97,18 @@ export async function taskOrchestrator(
   const attemptNumber = input.attemptNumber ?? 1;
   let phaseIteration = input.phaseIteration ?? 0;
   let costBudgetCents = input.config.costBudgetCents;
-  const costCents = 0;
+  let costCents = 0;
   const startedAt = new Date().toISOString();
   let lastActivityAt = startedAt;
+
+  // Inter-phase data (persisted for Continue-As-New)
+  let trustedContext: TrustedBaseContext | undefined = input.trustedContext;
+  let capabilitySnapshot: CapabilitySnapshot | undefined =
+    input.capabilitySnapshot;
+  let understandResult: UnderstandResult | undefined;
+  let planText: string | undefined;
+  let setupResult: SetupResult | undefined = input.setupResult;
+  let implementResult: ImplementResult | undefined = input.implementResult;
 
   // ─── Signal Handlers ───
 
@@ -100,7 +124,7 @@ export async function taskOrchestrator(
 
   // These handlers exist at the parent level to prevent "unhandled signal" warnings.
   // Actual signal processing for approve/reject/changes_requested/clarify happens
-  // in child workflows (review, clarify) which register their own handlers.
+  // in child workflows (review, clarify, implement) which register their own handlers.
   // The parent tracks lastActivityAt for progress reporting.
 
   setHandler(approveSignal, async () => {
@@ -207,6 +231,10 @@ export async function taskOrchestrator(
         resumeFromPhase: PHASE_ORDER[i],
         attemptNumber,
         phaseIteration,
+        trustedContext,
+        capabilitySnapshot,
+        setupResult,
+        implementResult,
       });
     }
 
@@ -258,38 +286,145 @@ export async function taskOrchestrator(
       }
     } else if (phase === "understand") {
       currentState = "in_progress";
-      await executeChild("understandPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            objective: input.objective,
-            baseSha: "stub-base-sha",
-          },
-        ],
-      });
+
+      if (patched("m12-real-understand")) {
+        // Capture TrustedBaseContext if not already done
+        // (This is done as a GitHub activity in the understand phase context)
+        const repoPath = `/tmp/factory/${input.taskId}/repo`;
+
+        const result = await executeChild("understandPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              objective: input.objective,
+              repoOwner: input.repoOwner ?? "",
+              repoName: input.repoName ?? "",
+              repoPath,
+              baseSha: trustedContext?.baseSha ?? "HEAD",
+            },
+          ],
+        });
+
+        understandResult = result;
+        capabilitySnapshot = result.capabilitySnapshot;
+        // Capture trustedContext from understand phase if not already set
+        if (!trustedContext) {
+          trustedContext = result.trustedContext;
+        }
+      } else {
+        await executeChild("understandPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              objective: input.objective,
+              baseSha: "stub-base-sha",
+            },
+          ],
+        });
+      }
     } else if (phase === "plan") {
-      await executeChild("planPhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId, objective: input.objective }],
-      });
+      if (patched("m12-real-plan")) {
+        const defaultModel = "anthropic/claude-sonnet-4-20250514";
+        const result = await executeChild("planPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              objective: input.objective,
+              repoMap: understandResult?.repoMap ?? [],
+              relevantFiles: [],
+              model: defaultModel,
+            },
+          ],
+        });
+
+        planText = result.plan;
+      } else {
+        await executeChild("planPhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId, objective: input.objective }],
+        });
+      }
     } else if (phase === "setup") {
-      await executeChild("setupPhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId }],
-      });
+      if (patched("m12-real-setup")) {
+        const repoPath = `/tmp/factory/${input.taskId}/repo`;
+        const repoSlug = `${input.repoOwner ?? ""}/${input.repoName ?? ""}`;
+
+        const defaultContext: TrustedBaseContext = trustedContext ?? {
+          baseSha: "HEAD",
+          setupContract: null,
+          policySnapshot: [],
+          behavioralControlFiles: {},
+          validationCommandSources: [],
+          capturedAt: new Date().toISOString(),
+        };
+
+        setupResult = await executeChild("setupPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              repoPath,
+              repoSlug,
+              trustedContext: defaultContext,
+            },
+          ],
+        });
+      } else {
+        await executeChild("setupPhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId }],
+        });
+      }
     } else if (phase === "implement") {
-      await executeChild("implementPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            objective: input.objective,
-            plan: "stub",
-            iteration: phaseIteration,
-          },
-        ],
-      });
+      if (patched("m12-real-implement")) {
+        const branchName = `factory/${input.taskId}`;
+        const defaultModel = "anthropic/claude-sonnet-4-20250514";
+        const baseSha = trustedContext?.baseSha ?? "HEAD";
+
+        const result = await executeChild("implementPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              objective: input.objective,
+              plan: planText ?? input.objective,
+              iteration: phaseIteration,
+              sandbox: setupResult?.sandboxInstance ?? {
+                containerId: "",
+                phase: "execution",
+                labels: {},
+              },
+              repoOwner: input.repoOwner ?? "",
+              repoName: input.repoName ?? "",
+              branchName,
+              baseSha,
+              model: defaultModel,
+              budgetCents: costBudgetCents,
+              autonomyLevel: input.autonomyLevel,
+            },
+          ],
+        });
+
+        implementResult = result;
+        costCents += result.agentResult.totalCostCents;
+      } else {
+        await executeChild("implementPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              objective: input.objective,
+              plan: "stub",
+              iteration: phaseIteration,
+            },
+          ],
+        });
+      }
     } else if (phase === "validate") {
       await executeChild("validatePhase", {
         workflowId: childId,
@@ -358,7 +493,18 @@ export async function taskOrchestrator(
   if (killed && killInfo) {
     await CancellationScope.nonCancellable(async () => {
       currentState = "cancelled";
-      // killInfo is available for audit logging in future milestones
+
+      // Release branch lease if setup was completed
+      if (setupResult?.branchLease) {
+        try {
+          // We can't call activities here during cancellation cleanup
+          // The branch lease TTL will auto-expire
+          void setupResult;
+        } catch {
+          // Best-effort cleanup
+        }
+      }
+
       void killInfo;
     });
   }

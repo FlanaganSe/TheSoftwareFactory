@@ -5,7 +5,7 @@
  */
 
 import type { TaskState } from "@software-factory/core";
-import { proxyActivities } from "@temporalio/workflow";
+import { ApplicationFailure, proxyActivities } from "@temporalio/workflow";
 import type { SafetyActivities, TaskActivities } from "../activity-types.js";
 
 const taskActivities = proxyActivities<TaskActivities>({
@@ -38,7 +38,9 @@ export async function intakePhase(input: IntakeInput): Promise<IntakeResult> {
   // Check kill switch before doing work
   const killCheck = await safetyActivities.checkKillSwitch(input.taskId);
   if (killCheck.killed) {
-    throw new Error(`Kill switch active: ${killCheck.scope}`);
+    throw ApplicationFailure.nonRetryable(
+      `Kill switch active: ${killCheck.scope}`,
+    );
   }
 
   // Create task in DB (state: 'created')

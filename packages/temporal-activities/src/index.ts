@@ -17,6 +17,12 @@ export type { RateLimitInfo, ThrottleDecision } from "./github/rate-limiter.js";
 
 export { scanRepository } from "./github/capability-scan.js";
 export type { ScanLogger } from "./github/capability-scan.js";
+export { createBranchActivities } from "./github/branch.js";
+export type { BranchActivityDeps, FileChange } from "./github/branch.js";
+export { createTrustedContextActivities } from "./github/trusted-context.js";
+export type { TrustedContextDeps } from "./github/trusted-context.js";
+export { createGitHubActivities } from "./github/activities.js";
+export type { GitHubActivityDeps } from "./github/activities.js";
 export {
   parseCodeowners,
   getOwners,
@@ -54,6 +60,10 @@ export { createTaskActivities } from "./db/task-activities.js";
 export type { CreateTaskInput } from "./db/task-activities.js";
 export { createAuditActivities } from "./db/audit-activities.js";
 export type { AuditEntryInput } from "./db/audit-activities.js";
+
+// === Index Activities ===
+export { createIndexActivities } from "./indexing/activities.js";
+export type { IndexActivityDeps } from "./indexing/activities.js";
 
 // === Code Indexing ===
 export {
@@ -156,3 +166,5 @@ export type {
   AgentStepConfig,
   AgentStepResult,
 } from "./llm/index.js";
+export { createPlanActivities } from "./llm/plan-activities.js";
+export type { PlanActivityDeps } from "./llm/plan-activities.js";

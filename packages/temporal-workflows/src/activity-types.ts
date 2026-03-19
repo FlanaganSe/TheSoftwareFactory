@@ -5,7 +5,13 @@
  * It must contain ONLY type definitions — no runtime code, no Node.js imports.
  */
 
-import type { TaskState } from "@software-factory/core";
+import type {
+  CapabilitySnapshot,
+  PolicyConfig,
+  SetupContract,
+  TaskState,
+  TrustedBaseContext,
+} from "@software-factory/core";
 
 // ─── DB Types (serializable representations) ───
 
@@ -125,8 +131,31 @@ export interface SandboxInstanceRef {
   readonly labels: Record<string, string>;
 }
 
+export interface SandboxProvisionConfig {
+  readonly repoPath: string;
+  readonly setupContract: SetupContract;
+  readonly taskId: string;
+  readonly repoSlug: string;
+  readonly secrets: SecretBindingsData;
+  readonly resourceLimits?: Partial<ResourceLimitsData>;
+}
+
+export interface SecretBindingsData {
+  readonly setupOnly: Readonly<Record<string, string>>;
+  readonly runtime: Readonly<Record<string, string>>;
+  readonly perTool: Readonly<Record<string, Readonly<Record<string, string>>>>;
+}
+
+export interface ResourceLimitsData {
+  readonly memoryBytes: number;
+  readonly nanoCpus: number;
+  readonly pidsLimit: number;
+  readonly tmpSizeMb: number;
+  readonly cacheSizeMb: number;
+}
+
 export interface SandboxActivities {
-  provisionSandbox(config: unknown): Promise<SandboxInstanceRef>;
+  provisionSandbox(config: SandboxProvisionConfig): Promise<SandboxInstanceRef>;
   execInSandbox(
     containerId: string,
     cmd: string[],
@@ -136,9 +165,43 @@ export interface SandboxActivities {
   cleanupOrphans(): Promise<number>;
 }
 
-export interface GitHubActivities {
-  scanRepository(owner: string, repo: string): Promise<unknown>;
+// ─── GitHub Activities ───
+
+export interface FileChangeData {
+  readonly path: string;
+  readonly content: string;
+  readonly mode: "100644" | "100755";
 }
+
+export interface GitHubActivities {
+  scanRepository(owner: string, repo: string): Promise<CapabilitySnapshot>;
+  captureTrustedContext(
+    owner: string,
+    repo: string,
+    defaultBranch: string,
+  ): Promise<TrustedBaseContext>;
+  createCandidateBranch(
+    owner: string,
+    repo: string,
+    branchName: string,
+    baseSha: string,
+  ): Promise<{ ref: string; sha: string }>;
+  pushChanges(
+    owner: string,
+    repo: string,
+    branchName: string,
+    parentSha: string,
+    changes: FileChangeData[],
+    commitMessage: string,
+  ): Promise<{ commitSha: string }>;
+  cloneRepo(
+    owner: string,
+    repo: string,
+    targetPath: string,
+  ): Promise<{ path: string; headSha: string }>;
+}
+
+// ─── LLM Activities ───
 
 export interface AgentStepConfig {
   readonly taskId: string;
@@ -164,6 +227,47 @@ export interface LLMActivities {
   executeAgentStep(config: AgentStepConfig): Promise<AgentStepResult>;
 }
 
+// ─── Index Activities ───
+
+export interface RepoMapEntryData {
+  readonly filePath: string;
+  readonly rank: number;
+  readonly keySymbols: readonly string[];
+  readonly lineCount: number;
+}
+
+export interface IndexResultData {
+  readonly indexVersionId: string;
+  readonly totalFiles: number;
+  readonly indexedFiles: number;
+  readonly excludedFiles: number;
+  readonly symbolCount: number;
+  readonly dependencyCount: number;
+  readonly durationMs: number;
+  readonly repoMap: readonly RepoMapEntryData[];
+}
+
 export interface IndexActivities {
-  indexRepository(config: unknown): Promise<unknown>;
+  indexRepositoryActivity(
+    repoPath: string,
+    commitSha: string,
+    repoId: string,
+    policies: PolicyConfig[],
+  ): Promise<IndexResultData>;
+}
+
+// ─── Plan Activities ───
+
+export interface FileContentData {
+  readonly path: string;
+  readonly content: string;
+}
+
+export interface PlanActivities {
+  generatePlan(
+    objective: string,
+    repoMap: RepoMapEntryData[],
+    relevantFiles: FileContentData[],
+    model: string,
+  ): Promise<{ plan: string; estimatedFiles: string[] }>;
 }

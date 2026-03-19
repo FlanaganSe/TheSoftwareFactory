@@ -332,7 +332,13 @@ software-factory/
   - [x] Step 4 — Write unit tests: tools.test.ts (15), cost-tracker.test.ts (8), agent.test.ts (6) → verify: all pass
   - [x] Step 5 — Full quality pass → verify: typecheck + lint pass, 85 new tests pass (530 total, 3 pre-existing failures in safety/Redis tests)
   Commit: "feat: add LLM agent core with OpenRouter provider, 7 governance-enforced tools, progressive edit format, and 5 self-healing guardrails"
-- [ ] **M12: Task Execution Pipeline** — Wire intake → understand → plan → implement loop through Temporal with sandbox + LLM
+- [x] **M12: Task Execution Pipeline** — Wire intake → understand → plan → implement loop through Temporal with sandbox + LLM
+  - [x] Step 1 — New activities: branch.ts (Git Database API), trusted-context.ts (capture TrustedBaseContext), indexing/activities.ts (wrap indexer), llm/plan-activities.ts (LLM planning); extend activity-types.ts with serializable interfaces; update temporal-activities index.ts → verify: `pnpm typecheck`
+  - [x] Step 2 — Replace phase workflows: understand.ts (index + repo map), plan.ts (LLM plan), setup.ts (sandbox + branch lease + setup contract), implement.ts (autonomy gate + agent + push); update orchestrator.ts for inter-phase data flow + patching; update index.ts → verify: `pnpm typecheck`
+  - [x] Step 3 — Update worker.ts to register all new activities (GitHub branch, trusted context, index, LLM); add @temporalio/client to api/package.json; wire POST/GET /api/tasks to start Temporal workflows → verify: `pnpm install && pnpm typecheck && pnpm lint`
+  - [x] Step 4 — Write activity tests: branch.test.ts (7), trusted-context.test.ts (5), index-activities.test.ts (3) → verify: `pnpm test`
+  - [x] Step 5 — Write workflow tests: understand-phase.test.ts (4), implement-phase.test.ts (6), m12-pipeline.test.ts (5), tasks-api.test.ts (9); fix orchestrator.test.ts for real phases (6); fix auth/role/api-key tests for 503 responses → verify: `pnpm test && pnpm typecheck && pnpm lint`
+  Commit: "feat: add task execution pipeline with real phase workflows, Git Database API, TrustedBaseContext, and L1 autonomy gate"
 
 ### Phase 3: Validation + Evidence — *"Proving the work is safe"*
 

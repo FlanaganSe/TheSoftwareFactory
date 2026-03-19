@@ -59,18 +59,18 @@ describe("role authorization", () => {
   });
 
   // Operator route: POST /api/tasks
-  it("operator accessing operator route → succeeds (501 stub)", async () => {
+  it("operator accessing operator route → succeeds (503 no Temporal)", async () => {
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       headers: { authorization: `Bearer ${operatorKey}` },
       payload: {
         objective: "test task",
-        repoId: "00000000-0000-0000-0000-000000000000",
-        createdBy: "test",
+        repoOwner: "test-org",
+        repoName: "test-repo",
       },
     });
-    expect(res.statusCode).toBe(501); // stub, not 403
+    expect(res.statusCode).toBe(503); // Temporal not configured, not 403
   });
 
   it("viewer accessing operator route → 403", async () => {
@@ -80,8 +80,8 @@ describe("role authorization", () => {
       headers: { authorization: `Bearer ${viewerKey}` },
       payload: {
         objective: "test task",
-        repoId: "00000000-0000-0000-0000-000000000000",
-        createdBy: "test",
+        repoOwner: "test-org",
+        repoName: "test-repo",
       },
     });
     expect(res.statusCode).toBe(403);
@@ -94,6 +94,6 @@ describe("role authorization", () => {
       url: "/api/tasks",
       headers: { authorization: `Bearer ${viewerKey}` },
     });
-    expect(res.statusCode).toBe(501); // stub, not 403
+    expect(res.statusCode).toBe(503); // Temporal not configured, not 403
   });
 });

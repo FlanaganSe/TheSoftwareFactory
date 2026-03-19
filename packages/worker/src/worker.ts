@@ -1,10 +1,16 @@
 import { createRequire } from "node:module";
 import { createDb } from "@software-factory/db";
 import {
+  CredentialBroker,
+  MutationSerializer,
   createAuditActivities,
   createBranchLeaseActivity,
   createCostCheckActivity,
+  createGitHubActivities,
+  createIndexActivities,
   createKillCheckActivity,
+  createLLMActivities,
+  createPlanActivities,
   createRedisClient,
   createSandboxActivities,
   createTaskActivities,
@@ -38,6 +44,72 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
   });
   const sandboxActivities = createSandboxActivities(docker);
 
+  // GitHub activities (requires App credentials)
+  const githubActivities = config.githubAppId
+    ? createGitHubActivities({
+        credentialBroker: new CredentialBroker(
+          config.githubAppId,
+          config.githubPrivateKey ?? "",
+          config.githubInstallationId ?? 0,
+        ),
+        serializer: new MutationSerializer(),
+        installationId: config.githubInstallationId ?? 0,
+      })
+    : {};
+
+  // Index activities
+  const indexActivities = createIndexActivities({ db });
+
+  // LLM activities
+  const llmActivities = config.openRouterApiKey
+    ? {
+        ...createLLMActivities({
+          createAgentConfig: async (stepConfig) => {
+            const { createProvider, createAgentTools, createCostTracker } =
+              await import("@software-factory/temporal-activities");
+            const providerConfig = {
+              apiKey: config.openRouterApiKey ?? "",
+              defaultModel: stepConfig.model,
+            };
+            const supervisor = (
+              await import("@software-factory/temporal-activities")
+            ).createSandboxSupervisor(docker);
+            const instance = {
+              containerId: "",
+              phase: "execution" as const,
+              labels: {},
+            };
+            return {
+              taskId: stepConfig.taskId,
+              objective: stepConfig.objective,
+              plan: stepConfig.plan,
+              repoMap: [],
+              relevantFiles: [],
+              policies: [],
+              sandbox: supervisor,
+              sandboxInstance: instance,
+              provider: providerConfig,
+              budgetCents: stepConfig.budgetCents,
+              maxSteps: stepConfig.maxSteps,
+              wallClockTimeoutMs: stepConfig.wallClockTimeoutMs,
+              costTrackerDeps: {
+                checkCostBudget: safetyActivities.checkCostBudget,
+                recordCost: safetyActivities.recordCost,
+                openRouterApiKey: config.openRouterApiKey,
+              },
+              checkKillSwitch: safetyActivities.checkKillSwitch,
+            };
+          },
+        }),
+        ...createPlanActivities({
+          providerConfig: {
+            apiKey: config.openRouterApiKey,
+            defaultModel: "anthropic/claude-sonnet-4-20250514",
+          },
+        }),
+      }
+    : {};
+
   const worker = await Worker.create({
     connection,
     namespace: config.temporalNamespace,
@@ -48,6 +120,9 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...auditActivities,
       ...safetyActivities,
       ...sandboxActivities,
+      ...githubActivities,
+      ...indexActivities,
+      ...llmActivities,
     },
     interceptors: {
       activity: [() => ({ inbound: new ActivityLogInterceptor() })],

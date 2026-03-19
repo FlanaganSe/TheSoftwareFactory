@@ -1,783 +1,308 @@
-# M2: Core Domain Package -- Research Findings
+# Temporal Time-Skipping Test Server: How It Works and Why Tests Break
 
-**Date:** 2026-03-18
-**Sources:** `docs/prd.md`, `docs/research-infrastructure.md`, `docs/research-integrations.md`, `.claude/plans/plan.md`
-
----
-
-## 1. Current State
-
-Package `@software-factory/core` exists with:
-- `zod` ^3.25.17 and `neverthrow` ^8.2.0 as dependencies
-- A single `src/index.ts` exporting `VERSION = "0.0.0"`
-- tsconfig extending `../../tsconfig.base.json` (ES2023, NodeNext, strict, verbatimModuleSyntax)
-- Biome configured with double quotes, semicolons, 2-space indent
-
-`picomatch` is NOT yet a dependency -- needs to be added for `PolicyDecisionService`.
+**Date:** 2026-03-19
 
 ---
 
-## 2. Files to Create (from plan.md lines 358-374)
+## 1. The Time Locking Counter Mechanism
 
-```
-packages/core/src/
-  types/
-    task.ts
-    evidence.ts
-    policy.ts
-    github.ts
-    sandbox.ts
-    audit.ts
-    llm.ts
-    repo.ts
-    auth.ts
-    trusted-context.ts
-  schemas/          -- Zod schemas (single source of truth, types derived via z.infer<>)
-  errors/
-    factory-error.ts
-    error-codes.ts
-  policy/
-    decision-service.ts   -- PolicyDecisionService with picomatch
-  state-machine.ts        -- Pure function map
-  index.ts                -- Public API re-exports
-```
+The Temporal Java Test Server uses a **Time Locking Counter** (an integer, not a boolean) to control time-skipping behavior. This is the single most important detail for understanding the problem.
+
+**Source:** Proto type definitions at `node_modules/.pnpm/@temporalio+proto@1.14.1/node_modules/@temporalio/proto/protos/root.d.ts` lines 95376-95490.
+
+The counter works as follows:
+
+- **`lockTimeSkipping()`** -- increments the counter by 1
+- **`unlockTimeSkipping()`** -- decrements the counter by 1
+- **When the counter is positive** -- time moves at *real-time* pace (time-skipping is disabled)
+- **When the counter reaches 0** -- time-skipping activates and the server fast-forwards to the next scheduled event (timer expiration, activity timeout, etc.)
+- **The server starts with the counter at 1** -- time-skipping is LOCKED by default
+
+This is explicitly documented in the proto comments:
+
+> "Test Server is typically started with locked time skipping and Time Locking Counter = 1."
+
+> "If the counter reaches 0, it unlocks time skipping and fast forwards time."
 
 ---
 
-## 3. Task State Machine
+## 2. How the TypeScript SDK Uses Lock/Unlock
 
-### 3.1 States (16 values)
+### 2.1 TimeSkippingWorkflowClient.result()
 
-From plan.md line 380:
+**File:** `node_modules/.pnpm/@temporalio+testing@1.14.1_tslib@2.8.1/node_modules/@temporalio/testing/src/client.ts` lines 56-67
 
-```typescript
-type TaskState =
-  | "created"
-  | "needs_clarification"
-  | "assigned"
-  | "in_progress"
-  | "paused"                      // Added beyond PRD for kill switch / cost budget
-  | "evidence_ready"
-  | "changes_requested"
-  | "approved"
-  | "pr_created"
-  | "external_checks_pending"
-  | "addressing_review_feedback"
-  | "external_blocked"
-  | "merge_ready"
-  | "merged"
-  | "failed"
-  | "cancelled"                   // Added beyond PRD for human-initiated cancellation
-```
-
-NOTE: The PRD R-002 (line 492-499) defines 14 states. The plan adds `paused` and `cancelled` (plan.md line 379-380). The DB schema in research-infrastructure.md Section 5.1 uses 14 states (no `paused`/`cancelled`). The plan.md M2 spec is authoritative -- use 16 states.
-
-### 3.2 Terminal States
-
-`merged`, `failed`, `cancelled` -- zero outgoing transitions.
-
-### 3.3 Valid Transitions (22 total)
-
-From plan.md lines 381:
-
-Original 18 (from research-infrastructure.md lines 833-845):
-1. created -> needs_clarification
-2. created -> assigned
-3. needs_clarification -> assigned
-4. assigned -> in_progress
-5. in_progress -> evidence_ready
-6. in_progress -> failed
-7. evidence_ready -> changes_requested
-8. evidence_ready -> approved
-9. changes_requested -> in_progress
-10. approved -> pr_created
-11. pr_created -> external_checks_pending
-12. external_checks_pending -> addressing_review_feedback
-13. external_checks_pending -> external_blocked
-14. external_checks_pending -> merge_ready
-15. addressing_review_feedback -> external_checks_pending
-16. external_blocked -> external_checks_pending
-17. merge_ready -> merged
-18. merge_ready -> failed
-
-Plus 4 new transitions for paused/cancelled (plan.md line 381):
-19. in_progress -> paused
-20. paused -> in_progress
-21. paused -> cancelled
-22. Any non-terminal state -> cancelled (this is a wildcard -- needs expansion)
-
-IMPORTANT: Transition 22 is described as `* -> cancelled from any non-terminal state`. This means the following transitions must exist for `cancelled`:
-- created -> cancelled
-- needs_clarification -> cancelled
-- assigned -> cancelled
-- in_progress -> cancelled
-- paused -> cancelled (already #21)
-- evidence_ready -> cancelled
-- changes_requested -> cancelled
-- approved -> cancelled
-- pr_created -> cancelled
-- external_checks_pending -> cancelled
-- addressing_review_feedback -> cancelled
-- external_blocked -> cancelled
-- merge_ready -> cancelled
-
-That would be 13 transitions to `cancelled`, plus the 21 above (minus the duplicate paused->cancelled). Total: 18 + 2 (paused transitions) + 13 (cancelled transitions) - 1 (duplicate) = 32. But the plan says "22 transitions". The plan likely means: 18 original + 4 explicitly listed = 22, where `* -> cancelled` is listed as a single conceptual transition but implemented as 13 concrete entries.
-
-DECISION NEEDED: Clarify with user whether "22 transitions" is the total or whether `* -> cancelled` should be expanded to all non-terminal source states.
-
----
-
-## 4. Evidence Bundle Fields (13 fields from R-008)
-
-From prd.md lines 544-561 and research-infrastructure.md lines 919-943:
-
-### 4.1 Relational (fixed) columns:
-- `id`: uuid PK
-- `taskId`: uuid FK -> tasks.id, NOT NULL
-- `version`: integer, default 1, NOT NULL
-- `objective`: text, NOT NULL
-- `revertabilityClass`: enum (`clean_revert` | `revert_with_migration` | `non_revertable`), NOT NULL
-- `blastRadiusFiles`: integer, NOT NULL
-- `blastRadiusPackages`: integer, NOT NULL
-- `hasProtectedSurfaceEdits`: boolean, default false, NOT NULL
-- `hasMigrationImpact`: boolean, default false, NOT NULL
-- `artifactUrl`: text, nullable
-- `createdAt`: timestamptz, NOT NULL
-
-### 4.2 JSONB (variable-structure) columns:
-- `annotatedDiff`: `AnnotatedDiff` type
-- `ownersImpacted`: `string[]`
-- `testResults`: `TestResults` type
-- `securityScanResults`: `ScanResults` type
-- `lintResults`: `LintResults` type
-- `protectedSurfaceEdits`: `ProtectedEdit[]` type
-- `migrationImpact`: `MigrationImpact` type
-- `unresolvedAssumptions`: `string[]`
-- `commandsRun`: `CommandRecord[]` type
-- `pendingExternalChecks`: `string[]`
-
-### 4.3 The 13 PRD R-008 fields:
-| # | Field | Purpose |
-|---|-------|---------|
-| 1 | Objective | What was attempted |
-| 2 | Annotated diff | What changed, with inline annotations |
-| 3 | Blast radius | Files, packages, downstream consumers affected |
-| 4 | Owners impacted | CODEOWNERS paths touched |
-| 5 | Test results | Suite results, new/modified/deleted tests highlighted |
-| 6 | Security scan results | Vulnerability findings |
-| 7 | Lint/type-check results | Static analysis findings |
-| 8 | Protected-surface edits | Behavioral control / protected file edits with justification |
-| 9 | Migration/schema impact | Database or data model changes detected |
-| 10 | Revertability class | clean_revert / revert_with_migration / non_revertable |
-| 11 | Unresolved assumptions | What the agent was uncertain about |
-| 12 | Commands and checks run | Exact validation commands executed |
-| 13 | Pending external checks | GitHub-required checks not yet run (post-PR) |
-
-### 4.4 Supporting types to define:
-
-```typescript
-// DiffAnnotation (from research-integrations.md lines 1119-1125)
-interface DiffAnnotation {
-  file: string;
-  hunk_index: number;
-  annotation: string;  // What this change does and why
-  risk_level: "low" | "medium" | "high";
-  affected_consumers: string[];  // Functions/modules that depend on this
-}
-
-type AnnotatedDiff = DiffAnnotation[];
-
-interface TestResults {
-  passed: number;
-  failed: number;
-  skipped: number;
-  newTests: string[];
-  modifiedTests: string[];
-  deletedTests: string[];
-  details: TestDetail[];
-}
-
-interface ScanResults {
-  vulnerabilities: Vulnerability[];
-  totalFindings: number;
-  criticalCount: number;
-  highCount: number;
-}
-
-interface LintResults {
-  errorCount: number;
-  warningCount: number;
-  details: LintDetail[];
-}
-
-interface ProtectedEdit {
-  filePath: string;
-  protectionClass: ProtectionClass;
-  justification: string;
-  beforeContent?: string;
-  afterContent?: string;
-}
-
-interface MigrationImpact {
-  hasMigrations: boolean;
-  migrationFiles: string[];
-  schemaChanges: string[];
-}
-
-interface CommandRecord {
-  command: string;
-  exitCode: number;
-  durationMs: number;
-  output?: string;
+```ts
+override async result<T>(
+  workflowId: string,
+  runId?: string | undefined,
+  opts?: WorkflowResultOptions | undefined
+): Promise<T> {
+  await this.testService.unlockTimeSkipping({});   // counter: 1 -> 0
+  try {
+    return await super.result(workflowId, runId, opts);  // long-poll for workflow close event
+  } finally {
+    await this.testService.lockTimeSkipping({});    // counter: 0 -> 1
+  }
 }
 ```
 
-CRITICAL: No scalar confidence scores. No generic rollback prose. Evidence must be derived from actual analysis.
+When you call `handle.result()`:
+1. The counter decrements from 1 to 0
+2. Since counter reaches 0, time-skipping ACTIVATES -- the server fast-forwards through ALL pending timers
+3. The method long-polls (`getWorkflowExecutionHistory` with `waitNewEvent: true`) for a close event
+4. When the workflow finishes, the counter is re-locked (incremented back to 1)
+
+### 2.2 TestWorkflowEnvironment.sleep()
+
+**File:** `node_modules/.pnpm/@temporalio+testing@1.14.1_tslib@2.8.1/node_modules/@temporalio/testing/src/testing-workflow-environment.ts` lines 338-344
+
+```ts
+sleep = async (durationMs: Duration): Promise<void> => {
+  if (this.supportsTimeSkipping) {
+    await this.connection.testService!.unlockTimeSkippingWithSleep({ duration: msToTs(durationMs) });
+  } else {
+    await new Promise((resolve) => setTimeout(resolve, msToNumber(durationMs)));
+  }
+};
+```
+
+Uses `unlockTimeSkippingWithSleep`, which:
+
+> "decreases time locking counter by one and increases it back once the Test Server Time advances by the duration specified in the request."
+
+This is an atomic "unlock, fast-forward by N ms, re-lock" operation.
+
+### 2.3 Critical: No Other Operations Touch the Lock
+
+`start()`, `signal()`, `describe()`, `query()` -- **none of these** interact with the time-locking counter. They are ordinary gRPC calls that execute against the test server at whatever the current server time happens to be. They do NOT pause or hold the time-skipping mechanism.
 
 ---
 
-## 5. Policy Types and Protection Classes
+## 3. Analysis of the Review Phase Tests
 
-### 5.1 Policy Types (from R-010, research-infrastructure.md line 987)
+### 3.1 Direct Review Phase Tests (PASS)
 
-```typescript
-type PolicyType =
-  | "read_exclusion"   // Deny read AND index (e.g., secrets/**, .env*, *.pem)
-  | "edit_deny"        // Deny edit without admin approval (e.g., .github/workflows/**)
-  | "edit_protected"   // Require separate approval (see protection classes)
-  | "edit_allowed"     // Allow within autonomy level (e.g., src/**)
+**File:** `packages/temporal-workflows/__tests__/review-phase.test.ts` lines 35-48
+
+```ts
+// Test: "returns approved when approve signal is sent"
+const handle = await testEnv.client.workflow.start("reviewPhase", {
+  args: [{ taskId: "t1", reviewTimeoutMs: 14_400_000 }],
+});
+await handle.signal(approveSignal, { actor: "reviewer" });
+return (await handle.result()) as ReviewResult;
 ```
 
-### 5.2 Protection Classes (from R-011, research-infrastructure.md line 988)
+This works because of execution order:
+1. `start()` -- starts the workflow (counter stays at 1, no time-skipping)
+2. `signal()` -- delivers the approve signal (counter stays at 1)
+3. `result()` -- calls `unlockTimeSkipping()` (counter: 1 -> 0), but by now the signal has already been processed and the condition `() => result !== undefined` evaluates to true, so the workflow completes immediately without needing to fast-forward through the 4-hour timer
 
-```typescript
-type ProtectionClass =
-  | "hard_protected"   // CI workflows, CODEOWNERS, .factory/**, holdout eval fixtures, behavioral control files. Deny by default, requires admin approval.
-  | "flagged"          // **/*.test.*, **/*.spec.*, **/test/** (product tests). Allowed but highlighted in evidence with justification. Configurable to require approval.
-  | "light_protected"  // **/__snapshots__/**, **/*.snap, **/fixtures/**, **/testdata/**. Flagged in evidence, auto-allowed at L2.
+The race condition is benign here because:
+- Between `start()` and `signal()`, time-skipping is LOCKED (counter = 1), so the 4-hour timer cannot fire
+- The signal arrives before `result()` unlocks time-skipping
+
+### 3.2 Timeout Test (PASS by Design)
+
+**File:** `packages/temporal-workflows/__tests__/review-phase.test.ts` lines 86-98
+
+```ts
+// Test: "times out after configured timeout"
+const handle = await testEnv.client.workflow.start("reviewPhase", {
+  args: [{ taskId: "t1", reviewTimeoutMs: 3_600_000 }], // 1 hour
+});
+return (await handle.result()) as ReviewResult;
 ```
 
-### 5.3 Behavioral Control Files (hard_protected, from R-011 lines 605-610)
-- `.github/copilot-instructions.md`
-- `.github/instructions/**/*.instructions.md`
-- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
-- MCP configuration files
-- `.factory/setup.yml` and related setup contracts
-- Any factory-owned policy files (`.factory/**`)
+No signal is sent. When `result()` unlocks time-skipping, the server fast-forwards the 1-hour timer instantly, causing `condition()` to return `false` (timeout), and the workflow completes with `timed_out`.
 
-### 5.4 PolicyConfig columns (from research-infrastructure.md lines 990-993)
-- `repoId`: uuid FK
-- `name`: text
-- `policyType`: policy_type enum
-- `protectionClass`: protection_class enum
-- `pathPatterns`: JSONB string[] NOT NULL
-- `autonomyLevel`: L0/L1/L2
-- `requiresApproval`: boolean, default false
-- `approverRole`: admin | operator
-- `isActive`: boolean, default true
-- `createdBy`, `createdAt`, `updatedAt`
+### 3.3 Orchestrator Test (PASS with Workaround)
 
-NOTE: Glob pattern matching MUST happen at the application layer (picomatch), NOT in SQL.
+**File:** `packages/temporal-workflows/__tests__/orchestrator.test.ts` line 36
 
----
-
-## 6. Autonomy Levels (from R-009, prd.md lines 565-572)
-
-```typescript
-type AutonomyLevel = "L0" | "L1" | "L2";
-```
-
-| Level | Name | What Agent Can Do | What Requires Human Approval |
-|-------|------|-------------------|------------------------------|
-| L0 | Observe | Read code, summarize, recommend | Everything else |
-| L1 | Propose | All of L0 + generate plans, produce diffs | Creating branches, writing files, creating PRs |
-| L2 | Constrained Execute | All of L1 + create branches, edit code, run tests, push to candidate branch | Creating PRs, merging, editing hard-protected files |
-
-Default: L1. L2 requires eval baseline evidence before activation (deferred to Phase 2).
-
-Plan.md refinement (line 385-387):
-- L0: Human confirms every action (branch creation, file writes, PR creation, merge)
-- L1: Agent produces diffs and plans; human approval required BEFORE branch creation and file writes; human reviews evidence before PR (DEFAULT)
-- L2: Agent can create branches, edit code, run tests, push to candidate branch autonomously; human approval required only for PR creation, merge, and editing hard-protected files
-
----
-
-## 7. Error Taxonomy (from plan.md lines 371-372, 388)
-
-10-class error taxonomy with retry policies:
-
-```typescript
-interface ErrorRetryPolicy {
-  retryable: boolean;
-  maxAttempts: number;
-  backoffMs: number;
+```ts
+config: {
+  reviewTimeoutMs: 1,  // <--- 1 millisecond!
+  // ...
 }
 ```
 
-Error classes to define (inferred from PRD and research -- exact names from plan.md line 372):
-1. `policy_denied` -- Policy engine blocked the action
-2. `github_transient` -- GitHub API temporary failure (rate limit, 5xx)
-3. `github_permanent` -- GitHub API permanent failure (404, 403 permission)
-4. `sandbox_failure` -- Docker container failure (OOM, timeout, crash)
-5. `llm_transient` -- LLM provider temporary failure (rate limit, 502, 503)
-6. `llm_permanent` -- LLM response error (moderation, invalid output)
-7. `state_invalid` -- Invalid state transition attempted
-8. `auth_failure` -- Authentication/authorization failure
-9. `budget_exceeded` -- Cost budget exceeded (task or global)
-10. `validation_failure` -- Zod validation / schema mismatch
-
-Each wraps a `Result<T, FactoryError>` via neverthrow.
+The orchestrator test uses `reviewTimeoutMs: 1` to avoid the problem entirely. With a 1ms timeout, even at real-time pace (time-skipping locked), the timer expires almost instantly when the workflow task is processed. The test never needs to signal the review phase.
 
 ---
 
-## 8. Auth Roles (from R-018, prd.md lines 687-696)
+## 4. Answering Your Specific Questions
 
-```typescript
-type AuthRole = "admin" | "operator" | "viewer";
-```
+### Q1: Does the time-skipping server advance time past the 4-hour timeout immediately?
 
-| Role | Permissions |
-|------|------------|
-| admin | Full access: configure repos, set policies, manage roles |
-| operator | Submit tasks, approve actions, view audit |
-| viewer | Read-only |
+**It depends on whether `handle.result()` has been called.**
 
-Separation of duties: task submitter cannot be sole approver (configurable for solo developers).
+- **Before `result()` is called:** NO. The counter is at 1 (locked). Time moves at real-time pace. The 4-hour timer will NOT fire for 4 real hours.
+- **After `result()` is called:** YES, immediately. The counter drops to 0 and the server fast-forwards to the next timer event, which is the 4-hour timeout. If no signal has been delivered yet, the timeout fires before the polling loop gets a chance to run.
 
----
+### Q2: Does the server wait until the test is idle before advancing time?
 
-## 9. Secret Classes (from Section 7.2, prd.md lines 454-458)
+**No.** The server does not have any concept of "test idle detection." Time advancement is controlled purely by the lock counter:
+- Counter > 0: real-time pace
+- Counter = 0: fast-forward to next event
 
-```typescript
-type SecretClass = "setup_only" | "runtime" | "per_tool";
-```
+### Q3: Will the polling loop scenario work?
 
-| Class | Available During | Removed Before | Example |
-|-------|-----------------|----------------|---------|
-| setup_only | Environment setup (dependency install, build) | Agent execution phase | NPM_TOKEN, registry creds |
-| runtime | Agent execution phase | Sandbox teardown | DATABASE_URL, API_KEY |
-| per_tool | Only when specific tool is invoked | Between tool invocations | GITHUB_TOKEN for gh CLI |
-
----
-
-## 10. Review Timeout Defaults
-
-From prd.md R-007 (line 539):
-- Configurable timeout: **default 4 hours** -> escalation fires
-
-From research-infrastructure.md (Temporal, line 107):
-- ReviewPhase: waits for human signal, **7-day timeout**
-
-From prd.md R-024 (lines 735-736):
-- Max iteration limit: 10
-- No-progress detector: 3 loops without state change
-- Time budget: 30 min per repair
-- Loop-of-doom detector: 4+ identical failing calls
-
-From prd.md R-013 (lines 628-629):
-- Budget ceiling per task: default $10
-- Budget ceiling global: default $100/day
-- 80% -> notify, 100% -> pause
-
----
-
-## 11. Setup Contract Fields (from prd.md Section 7.1, lines 419-437)
-
-```typescript
-interface SetupContract {
-  image: string;                    // e.g., "node:22-slim" or prebuilt image ref
-  setup: string[];                  // Runs once when building environment
-  maintenance: string[];            // Runs when resuming from cache
-  secrets: {
-    setup_only: string[];           // Available during setup, removed before agent
-    runtime: string[];              // Available during agent execution
-    per_tool: PerToolSecret[];      // Scoped to specific MCP tools
-  };
-  health_check: string[];           // Must pass before agent starts
-}
-
-interface PerToolSecret {
-  name: string;
-  tools: string[];
+```ts
+for (let i = 0; i < 50; i++) {
+  await new Promise(r => setTimeout(r, 200));
+  const desc = await reviewHandle.describe();
+  if (desc.status.name === "RUNNING") {
+    await reviewHandle.signal(approveSignal, { actor: "reviewer" });
+    break;
+  }
 }
 ```
 
-Canonical path: `.factory/setup.yml`
+**This loop will work AS LONG AS `handle.result()` has NOT been called yet.** During the polling loop, the counter is still at 1, so time-skipping is locked and the 4-hour timer will not fire. The `describe()` and `signal()` calls do not affect the lock counter.
+
+However, the moment `result()` is called after the loop, time-skipping unlocks. If the signal was successfully delivered, the condition is already satisfied and the workflow completes. If the signal was NOT delivered (e.g., the loop finished without finding RUNNING status), the 4-hour timeout fires instantly.
 
 ---
 
-## 12. Container Phases (from plan.md line 363)
+## 5. Why Adding Child Workflows Before Review Could Break Tests
 
-```typescript
-type ContainerPhase =
-  | "resolving"       // Parsing setup contract, computing cache key
-  | "creating"        // Creating container from image
-  | "setup"           // Running setup commands with network access
-  | "maintenance"     // Running maintenance commands (if cached)
-  | "executing"       // Agent running, no network
-  | "cleanup"         // Stopping and removing container
+### The Core Problem
+
+When the orchestrator runs multiple child workflows before review (intake, understand, plan, setup, implement, validate, evidence), each `executeChild()` must complete before the next one starts. During this entire sequence, time-skipping is either:
+
+1. **Locked (counter = 1):** Each child workflow runs at real-time pace. Activities that use `testEnv.sleep()` inside them would call `unlockTimeSkippingWithSleep`, temporarily dropping the counter. But the test code calling `handle.result()` on the parent would unlock time-skipping for ALL workflows in the test server, not just the parent.
+
+2. **If the parent `result()` is called before signaling review:** Time-skipping unlocks, all pending timers (including the 4-hour review timeout) fire simultaneously. The review phase times out before the test can send a signal.
+
+### Specific Scenarios That Break
+
+**Scenario A: Test calls `parentHandle.result()` and expects to signal review mid-flight**
+
+```ts
+const parentHandle = await client.workflow.start("taskOrchestrator", { ... });
+// Time-skipping unlocks immediately!
+const result = await parentHandle.result();
+// By now, all timers have fired, review has timed out
 ```
 
-From research-infrastructure.md Section 4.10 (lines 715-749), the 6 container lifecycle phases:
-1. RESOLVE ENVIRONMENT
-2. CREATE CONTAINER
-3. SETUP PHASE (if not cached)
-4. MAINTENANCE PHASE (if cached)
-5. EXECUTION PHASE
-6. CLEANUP
+This is what the current orchestrator test avoids by using `reviewTimeoutMs: 1`. If the timeout were 4 hours, calling `result()` would fast-forward through the review timeout before any signal could be sent.
 
-EnvironmentState fields (research-infrastructure.md lines 1034-1040):
-- `repoId`: uuid FK
-- `imageRef`: text nullable
-- `setupContractHash`: text nullable
-- `cacheValid`: boolean, default false
-- `lastHealthCheck`: timestamptz nullable
-- `healthStatus`: "healthy" | "unhealthy" | "unknown"
+**Scenario B: Test tries to poll for review child, then signal it**
 
----
+```ts
+const parentHandle = await client.workflow.start("taskOrchestrator", { ... });
 
-## 13. PR States and Review States
+// Poll for review child to start running
+for (let i = 0; i < 50; i++) {
+  await new Promise(r => setTimeout(r, 200));
+  // Try to describe the review child workflow
+}
 
-### 13.1 ReviewState enum (10 values)
-
-From research-infrastructure.md lines 950:
-
-```typescript
-type ReviewState =
-  | "pending_evidence"
-  | "evidence_ready"
-  | "approved"
-  | "changes_requested"
-  | "pr_created"
-  | "external_checks_pending"
-  | "external_blocked"
-  | "merge_ready"
-  | "merged"
-  | "closed"
+// Signal the parent (which forwards to review child)
+await parentHandle.signal(approveSignal, { actor: "reviewer" });
+const result = await parentHandle.result(); // NOW time-skipping unlocks
 ```
 
-### 13.2 ReviewState table fields (research-infrastructure.md lines 952-968)
+This WOULD work if:
+- All prior child workflows (intake through evidence) complete during the polling window
+- The review child actually starts before the polling loop gives up
+- The signal arrives before `result()` is called
 
-Relationship: 1:1 with tasks (unique constraint on task_id).
+But with mock activities that return instantly, the prior children complete in a few hundred ms. The review child would be RUNNING within the first few polling iterations. The signal is then delivered while time-skipping is still locked. When `result()` finally unlocks time-skipping, the condition is already satisfied (signal was received), so the workflow completes immediately without the timeout firing.
 
-Internal (factory) boundary fields:
-- `evidenceBundleId`: uuid FK -> evidence_bundles.id
-- `internalApprovedBy`: text
-- `internalApprovedAt`: timestamptz
+**Scenario C: Global time-skipping interference between concurrent tests**
 
-External (GitHub) boundary fields (NULL until PR created):
-- `prNumber`: integer
-- `prUrl`: text
-- `requiredChecks`: jsonb `RequiredCheck[]`
-- `codeownersStatus`: jsonb `CodeownersStatus[]`
-- `unresolvedThreads`: integer, default 0
-- `staleReviews`: boolean, default false
-- `mergeQueueStatus`: text
+The test environment documentation explicitly warns:
 
-Reconciliation fields:
-- `lastGithubSync`: timestamptz
-- `githubReconciliationData`: jsonb
+> "Time skipping, which is automatically done when awaiting a workflow result and manually done on sleep, is global to the environment, not to the workflow under test."
 
-### 13.3 GitHub PR types (plan.md line 362)
+(`testing-workflow-environment.ts` lines 138-140)
 
-For `src/types/github.ts` -- PRState and ReviewState types, WebhookEvent types. NOT CapabilitySnapshot (deferred to M6).
+If two tests share the same `TestWorkflowEnvironment` and one calls `result()`, it unlocks time-skipping globally, potentially causing timeouts in the other test's review phase.
+
+### The `reviewTimeoutMs: 1` Workaround
+
+The current orchestrator tests use `reviewTimeoutMs: 1` specifically to avoid dealing with time-skipping. With a 1ms timeout:
+- The `condition()` in the review phase is `Promise.race([sleep(1), conditionInner(fn)])`
+- The 1ms timer expires almost instantly during normal workflow task processing
+- The review returns `timed_out` without needing any signal
+- The orchestrator handles `timed_out` with `currentState = "failed"; break;`
+- The test expects either success or failure (lines 207-216: `try { await handle.result() } catch { // Review timeout failure is expected }`)
 
 ---
 
-## 14. LLM Audit Entry Fields (from research-integrations.md lines 1095-1111)
+## 6. How `condition(fn, timeout)` Works Internally
 
-```typescript
-interface LLMCallAuditEntry {
-  timestamp: string;           // ISO 8601
-  task_id: string;
-  workflow_phase: string;      // understand, plan, implement, evidence
-  model_requested: string;
-  model_used: string;
-  provider: string;
-  input_tokens: number;
-  output_tokens: number;
-  reasoning_tokens?: number;
-  cached_tokens?: number;
-  cost_usd: number;
-  latency_ms: number;
-  finish_reason: string;
-  content_hash: string;        // SHA-256 of prompt + response
+**File:** `node_modules/.pnpm/@temporalio+workflow@1.14.1/node_modules/@temporalio/workflow/src/workflow.ts` lines 1160-1176
+
+```ts
+export async function condition(fn: () => boolean, timeout?: Duration): Promise<void | boolean> {
+  if (typeof timeout === 'number' || typeof timeout === 'string') {
+    return CancellationScope.cancellable(async () => {
+      try {
+        return await Promise.race([
+          sleep(timeout).then(() => false),
+          conditionInner(fn).then(() => true)
+        ]);
+      } finally {
+        CancellationScope.current().cancel();
+      }
+    });
+  }
+  return conditionInner(fn);
 }
 ```
 
----
+`condition(fn, timeout)` is a `Promise.race` between:
+- A `sleep(timeout)` that resolves to `false` (timed out)
+- A `conditionInner(fn)` that resolves to `true` when `fn()` returns true
 
-## 15. General Audit Entry Fields (from R-012, prd.md lines 617-624)
-
-```typescript
-interface AuditEntry {
-  id: string;                  // uuid
-  timestamp: string;           // ISO 8601
-  actor: string;
-  actionType: string;
-  targetType: string;
-  targetId: string;
-  result: string;
-  costCents?: number;
-  taskId?: string;
-  content?: unknown;           // Full content (90-day retention)
-  contentHash: string;         // SHA-256 of serialized content (2-year retention)
-}
-```
-
-Action types to enumerate (inferred from PRD):
-- task_state_change
-- task_created
-- evidence_generated
-- review_decision
-- pr_created
-- pr_merged
-- pr_closed
-- policy_check
-- llm_call
-- sandbox_exec
-- file_read
-- file_write
-- command_run
-- credential_rotation
-- secret_access
-- kill_switch_activated
-- budget_warning
-- config_changed
+The `sleep()` here is the WORKFLOW's `sleep`, not `setTimeout`. It creates a Temporal timer command. When the time-skipping server fast-forwards, it fires this timer, causing the race to resolve with `false` (timeout).
 
 ---
 
-## 16. Config Schema Fields
+## 7. Summary of Key Findings
 
-From plan.md line 374 and prd.md:
+| Aspect | Behavior |
+|--------|----------|
+| Counter initial value | 1 (locked) |
+| `result()` effect | Unlocks (counter -1), re-locks on completion |
+| `signal()` effect | None on counter |
+| `describe()` effect | None on counter |
+| `query()` effect | None on counter |
+| `start()` effect | None on counter |
+| Time-skip trigger | Counter reaches 0 |
+| Fast-forward scope | Global -- all workflows in the test server |
+| Multiple tests | Must NOT share environment concurrently |
 
-```typescript
-interface FactoryConfig {
-  api: {
-    port: number;                     // default 3000
-    host: string;                     // default "0.0.0.0"
-    apiKeys: string[];                // or loaded from DB
-  };
-  database: {
-    connectionString: string;
-    maxConnections: number;           // default 20
-  };
-  redis: {
-    url: string;
-  };
-  temporal: {
-    address: string;                  // default "localhost:7233"
-    namespace: string;                // default "default"
-  };
-  objectStorage: {
-    endpoint: string;
-    bucket: string;                   // default "factory-artifacts"
-    accessKey: string;
-    secretKey: string;
-  };
-  github: {
-    appId: string;
-    privateKeyPath: string;
-    clientId: string;
-    clientSecret: string;
-    webhookSecret: string;
-  };
-  llm: {
-    provider: string;                 // default "openrouter"
-    apiKey: string;
-    defaultModel: string;
-    budgetPerTaskCents: number;       // default 1000 ($10)
-    budgetDailyCents: number;         // default 10000 ($100)
-  };
-  autonomy: {
-    defaultLevel: AutonomyLevel;      // default "L1"
-    soloDevMode: boolean;             // default false (enables submitter=approver)
-  };
-  review: {
-    timeoutHours: number;             // default 4
-    escalationEnabled: boolean;       // default true
-  };
-  sandbox: {
-    memoryLimitBytes: number;         // default 4 * 1024^3 (4 GB)
-    cpuLimit: number;                 // default 2
-    pidsLimit: number;                // default 256
-    networkMode: string;              // default "none"
-  };
-}
-```
+### Recommendations for Testing Review Phase in Orchestrator
 
-IMPORTANT: Core exports ONLY the Zod schema for this config. Actual config loading (process.env, fs, TOML, XDG paths) lives in packages/api, packages/worker, packages/cli.
+1. **Signal before calling `result()`**: Start the orchestrator, poll/wait for the review phase to be active, send the signal, THEN call `result()`. Time-skipping stays locked during the entire signal delivery because the counter never reaches 0 until `result()`.
+
+2. **Use the query handler**: The orchestrator exposes `getPhaseQuery`. Poll with `handle.query(getPhaseQuery)` until it returns `"review"`, then signal, then call `result()`.
+
+3. **Avoid `reviewTimeoutMs: 1` if testing the happy path**: If you want to test that the review signal actually approves the workflow (instead of timing out), use a real timeout value and rely on the fact that signals arrive while time-skipping is locked.
+
+4. **Run tests serially or use separate environments**: Never run two tests concurrently against the same `TestWorkflowEnvironment` if either calls `result()`.
 
 ---
 
-## 17. Agent Tools (from research-integrations.md Section 2.7, lines 997-1007)
+## 8. Relevant File Paths
 
-7 core tools:
+### Temporal testing SDK source (time-skipping implementation)
+- `/Users/seanflanagan/proj/software-factory/node_modules/.pnpm/@temporalio+testing@1.14.1_tslib@2.8.1/node_modules/@temporalio/testing/src/client.ts` -- TimeSkippingWorkflowClient with lock/unlock in `result()` (lines 56-67)
+- `/Users/seanflanagan/proj/software-factory/node_modules/.pnpm/@temporalio+testing@1.14.1_tslib@2.8.1/node_modules/@temporalio/testing/src/testing-workflow-environment.ts` -- `sleep()` using `unlockTimeSkippingWithSleep` (lines 338-344), global time-skipping warning (lines 138-140)
 
-```typescript
-type AgentTool =
-  | "file_read"
-  | "file_write"
-  | "file_edit"
-  | "search_codebase"
-  | "run_command"
-  | "list_files"
-  | "search_text"
-```
+### Proto definitions (lock counter semantics)
+- `/Users/seanflanagan/proj/software-factory/node_modules/.pnpm/@temporalio+proto@1.14.1/node_modules/@temporalio/proto/protos/root.d.ts` -- TestService RPC docs (lines 95376-95490)
 
----
+### Workflow SDK (condition internals)
+- `/Users/seanflanagan/proj/software-factory/node_modules/.pnpm/@temporalio+workflow@1.14.1/node_modules/@temporalio/workflow/src/workflow.ts` -- `condition()` implementation (lines 1160-1176)
 
-## 18. Edit Format (from research-integrations.md Section 2.5, lines 957-965)
-
-```typescript
-type EditFormat = "search_replace" | "whole_file";
-```
-
-Search/replace blocks as primary format with progressive matching:
-1. Exact match
-2. Whitespace-tolerant
-3. Fuzzy
-
-Whole-file generation for small new files (under ~400 lines).
-Avoid line numbers in edit formats.
-
----
-
-## 19. Guardrail Defaults (from research-integrations.md Section 2.8)
-
-| Guardrail | Threshold | Action |
-|-----------|-----------|--------|
-| Max iterations | 10 | Hard stop |
-| No-progress fingerprint | 3 identical consecutive | Pause + notify |
-| Loop-of-doom hash | 4 identical failing calls | Pause + notify |
-| Wall-clock timer | 30 minutes per repair | Pause |
-| Cost budget (task) | $10 default (80% notify, 100% pause) | Pause |
-| Cost budget (daily) | $100 default (80% notify, 100% pause) | Pause all |
-
----
-
-## 20. TrustedBaseContext (from plan.md line 389)
-
-Captured at intake phase, pinned to base SHA:
-
-```typescript
-interface TrustedBaseContext {
-  baseSha: string;                          // Pinned commit SHA
-  setupContract: SetupContract | null;      // Parsed .factory/setup.yml from base ref
-  behavioralControlFiles: BehavioralControlFile[];  // Parsed from base ref ONLY
-  policySnapshot: PolicyConfig[];           // Active policies at task creation
-  validationCommands: string[];             // Validation command sources from base ref
-}
-
-interface BehavioralControlFile {
-  path: string;
-  content: string;
-  sha: string;
-}
-```
-
-All downstream phases consume ONLY this artifact. Candidate-branch edits to behavioral control files are treated as diff content in evidence, not as live inputs.
-
----
-
-## 21. Repository Type (from research-infrastructure.md lines 1027-1032)
-
-```typescript
-interface Repository {
-  id: string;
-  githubOwner: string;
-  githubRepo: string;
-  defaultBranch: string;           // default "main"
-  repoClass: RepoClass;           // default "A"
-  autonomyLevel: AutonomyLevel;   // default "L1"
-  setupContractPath?: string;
-}
-
-type RepoClass = "A" | "B" | "C";
-```
-
----
-
-## 22. External Failure Classes (from R-002, prd.md lines 507-512)
-
-```typescript
-type ExternalFailureClass =
-  | "transient_infra"     // Flaky CI, runner timeout -> Rerun (max 2)
-  | "mergeability_drift"  // Base branch moved -> Rebase + revalidate
-  | "code_policy"         // CodeQL finding, push ruleset violation -> Pause + notify
-  | "manual_gate"         // Deployment approval pending -> Pause + notify
-```
-
----
-
-## 23. Webhook Event Types (for github.ts)
-
-From research-integrations.md Section 1.5 (lines 199-217), the 16 webhook-to-state transitions:
-- pull_request: opened, synchronize, closed, enqueued, dequeued, ready_for_review, converted_to_draft
-- pull_request_review: submitted (changes_requested, approved), dismissed
-- check_run: completed
-- check_suite: completed
-- merge_group: checks_requested, destroyed
-- push (to agent branch by non-factory actor)
-- installation: deleted, suspend
-
----
-
-## 24. Cost Records (from research-infrastructure.md lines 1043-1049)
-
-```typescript
-interface CostRecord {
-  id: string;
-  taskId?: string;
-  modelId: string;
-  inputTokens: number;
-  outputTokens: number;
-  costCents: number;          // numeric(10, 4)
-  latencyMs?: number;
-  timestamp: string;
-}
-```
-
----
-
-## 25. Critical Constraints for Implementation
-
-1. **NO Node.js APIs in packages/core** -- must remain pure TypeScript for Temporal V8 sandbox compatibility. No `fs`, `http`, `crypto`, `process.env`. Add a workflow-bundle CI test.
-
-2. **Zod .strict() on ALL object schemas** to catch extra fields early.
-
-3. **Types derived via z.infer<>** -- Zod schemas are the single source of truth. Do NOT hand-write parallel type interfaces.
-
-4. **Config loading is NOT in this package** -- only the config Zod schema. Loading happens in api/worker/cli.
-
-5. **neverthrow Result<T, E>** for all fallible operations at domain boundaries.
-
-6. **picomatch** for glob matching in PolicyDecisionService -- ReDoS-safe, 0 deps.
-
-7. **State machine is a pure map** -- no classes, no side effects. `canTransition(from, to): boolean` and `getValidTransitions(from): TaskState[]`.
-
-8. **CapabilitySnapshot** type belongs in M6, NOT in M2.
-
-9. **verbatimModuleSyntax: true** enforces `import type` for all type-only imports.
-
-10. Biome formatting: double quotes, semicolons, 2-space indent, LF line endings.
-
----
-
-## 26. Verification Criteria (from plan.md lines 392-396)
-
-- Unit tests for state machine: every valid transition returns true, every invalid transition returns false, terminal states have no outgoing, paused and cancelled transitions work correctly
-- Unit tests for Zod schemas: valid data passes, invalid data fails with expected errors
-- Unit tests for PolicyDecisionService: read/write/deny/flag decisions correct for all policy types
-- `pnpm typecheck` passes
-- Workflow bundle test: verify that importing `core` into a Temporal workflow bundle does NOT pull in Node.js built-ins
-
----
-
-## 27. Open Questions / Decisions Needed
-
-1. **Transition count:** Plan says "22 transitions" but `* -> cancelled from any non-terminal state` expands to 13 concrete transitions. Is the total 22 (treating `* -> cancelled` as 4 explicit transitions: in_progress, paused, evidence_ready, approved) or 32 (expanding to all non-terminal states)?
-
-2. **Workflow phases list for LLMCallAuditEntry.workflow_phase:** The research lists `understand`, `plan`, `implement`, `evidence` but the full phase list from Temporal (research-infrastructure.md line 107) is: Intake, Understand, Plan, Setup, Implement, Validate, Evidence, Review, PRCreation, PRTracking, Learn. Should the enum cover all 11?
-
-3. **HealthStatus type for EnvironmentState:** research-infrastructure.md line 1039 lists `healthy | unhealthy | unknown`. Should this be a separate enum or inline literal union?
+### Project test files
+- `/Users/seanflanagan/proj/software-factory/packages/temporal-workflows/__tests__/orchestrator.test.ts` -- uses `reviewTimeoutMs: 1` workaround (line 36)
+- `/Users/seanflanagan/proj/software-factory/packages/temporal-workflows/__tests__/review-phase.test.ts` -- uses `reviewTimeoutMs: 14_400_000` with signal-before-result pattern (lines 35-48)
+- `/Users/seanflanagan/proj/software-factory/packages/temporal-workflows/src/phases/review.ts` -- review phase with `condition(() => result !== undefined, reviewTimeoutMs)` (lines 74-77)
+- `/Users/seanflanagan/proj/software-factory/packages/temporal-workflows/src/orchestrator.ts` -- parent workflow phase loop (lines 218-509)

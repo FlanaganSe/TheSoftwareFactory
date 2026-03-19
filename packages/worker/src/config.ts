@@ -4,6 +4,10 @@ export interface WorkerConfig {
   readonly databaseUrl: string;
   readonly redisUrl: string;
   readonly dockerSocketPath?: string;
+  readonly githubAppId?: string;
+  readonly githubPrivateKey?: string;
+  readonly githubInstallationId?: number;
+  readonly openRouterApiKey?: string;
 }
 
 export function loadWorkerConfig(): WorkerConfig {
@@ -23,5 +27,11 @@ export function loadWorkerConfig(): WorkerConfig {
     databaseUrl,
     redisUrl,
     dockerSocketPath: process.env.DOCKER_SOCKET_PATH,
+    githubAppId: process.env.GITHUB_APP_ID,
+    githubPrivateKey: process.env.GITHUB_PRIVATE_KEY,
+    githubInstallationId: process.env.GITHUB_INSTALLATION_ID
+      ? Number(process.env.GITHUB_INSTALLATION_ID)
+      : undefined,
+    openRouterApiKey: process.env.OPENROUTER_API_KEY,
   };
 }

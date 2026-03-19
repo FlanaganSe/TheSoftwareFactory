@@ -14,50 +14,87 @@ import {
 
 let testEnv: TestWorkflowEnvironment;
 
-const defaultInput: TaskWorkflowInput = {
-  taskId: "t1",
+// ─── Shared test data ───
+
+const mockSetupContract = {
+  version: "1",
+  image: "node:22-slim",
+  setup: [],
+  maintenance: [],
+  secrets: { setup_only: [], runtime: [], per_tool: [] },
+  health_check: [],
+};
+
+const mockTrustedContext = {
+  baseSha: "abc123",
+  setupContract: mockSetupContract,
+  policySnapshot: [],
+  behavioralControlFiles: {},
+  validationCommandSources: [],
+  capturedAt: new Date().toISOString(),
+};
+
+const mockCapabilitySnapshot = {
   repoId: "repo-1",
+  capturedAt: new Date().toISOString(),
+  sourceRevision: "abc123",
+  defaultBranch: "main",
+  visibility: "private" as const,
+  isArchived: false,
+  isFork: false,
+  hasWiki: false,
+  hasProjects: false,
+  branchProtection: null,
+  rulesets: [],
+  hasInheritedRulesets: false,
+  codeowners: null,
+  mergeQueue: null,
+  allowedMergeStrategies: ["squash" as const],
+  requiredStatusChecks: [],
+  requiredWorkflows: [],
+  requiresSignedCommits: false,
+  requiresLinearHistory: false,
+  requiresConversationResolution: false,
+  dismissesStaleReviews: false,
+  requiredReviewCount: 0,
+  requiresCodeOwnerReview: false,
+  lastPusherCannotApprove: false,
+  hasPullRequestTargetWorkflows: false,
+  pullRequestTargetWorkflowPaths: [],
+  pushRestrictions: null,
+  bypassActors: [],
+  environments: [],
+  repoClass: "C" as const,
+  supportedByFactory: true,
+  unsupportedReasons: [],
+  warnings: [],
+};
+
+const mockTaskRecord = {
+  id: "t1",
+  state: "created" as const,
   objective: "Add a README",
-  autonomyLevel: "L1",
-  config: {
-    reviewTimeoutMs: 14_400_000,
-    costBudgetCents: 1000,
-    maxImplementationAttempts: 3,
-  },
+  repoId: "repo-1",
+  createdBy: "system",
+  autonomyLevel: "L2",
+  scope: null,
+  constraints: null,
+  budgetCents: null,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
 };
 
 const mockActivities = {
-  createTask: async () => ({
-    id: "t1",
-    state: "created",
-    objective: "Add a README",
-    repoId: "repo-1",
-    createdBy: "system",
-    autonomyLevel: "L1",
-    scope: null,
-    constraints: null,
-    budgetCents: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }),
+  // DB activities
+  createTask: async () => mockTaskRecord,
   transitionTaskState: async (_taskId: string, newState: string) => ({
-    id: "t1",
+    ...mockTaskRecord,
     state: newState,
-    objective: "Add a README",
-    repoId: "repo-1",
-    createdBy: "system",
-    autonomyLevel: "L1",
-    scope: null,
-    constraints: null,
-    budgetCents: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   }),
-  getTask: async () => ({
-    id: "t1",
-    state: "assigned",
-  }),
+  getTask: async () => ({ id: "t1", state: "assigned" }),
   listActiveTasks: async () => [],
+  insertAuditEntry: async () => {},
+  // Safety activities
   checkKillSwitch: async () => ({ killed: false, scope: "none" as const }),
   checkCostBudget: async () => ({
     allowed: true,
@@ -65,7 +102,6 @@ const mockActivities = {
     budgetCents: 1000,
     percentUsed: 0,
   }),
-  insertAuditEntry: async () => {},
   acquireBranchLease: async () => ({ acquired: true }),
   releaseBranchLease: async () => true,
   renewBranchLease: async () => true,
@@ -75,7 +111,112 @@ const mockActivities = {
     percentUsed: 0,
     overBudget: false,
   }),
+  // GitHub activities
+  scanRepository: async () => mockCapabilitySnapshot,
+  captureTrustedContext: async () => mockTrustedContext,
+  createCandidateBranch: async () => ({
+    ref: "refs/heads/factory/t1",
+    sha: "abc123",
+  }),
+  pushChanges: async () => ({ commitSha: "def456" }),
+  cloneRepo: async () => ({ path: "/tmp/factory/t1/repo", headSha: "abc123" }),
+  // Index activities
+  indexRepositoryActivity: async () => ({
+    indexVersionId: "idx-1",
+    totalFiles: 10,
+    indexedFiles: 8,
+    excludedFiles: 2,
+    symbolCount: 50,
+    dependencyCount: 20,
+    durationMs: 1000,
+    repoMap: [
+      {
+        filePath: "src/index.ts",
+        rank: 1.0,
+        keySymbols: ["main"],
+        lineCount: 50,
+      },
+    ],
+  }),
+  // Plan activities
+  generatePlan: async () => ({
+    plan: "## Plan\n### Step 1\n- **Files:** src/index.ts",
+    estimatedFiles: ["src/index.ts"],
+  }),
+  // Sandbox activities
+  provisionSandbox: async () => ({
+    containerId: "container-1",
+    phase: "execution",
+    labels: {},
+  }),
+  execInSandbox: async () => ({
+    exitCode: 0,
+    stdout: "",
+    stderr: "",
+    durationMs: 100,
+  }),
+  destroySandbox: async () => {},
+  cleanupOrphans: async () => 0,
+  // LLM activities
+  executeAgentStep: async () => ({
+    success: true,
+    filesModified: [],
+    toolCallCount: 0,
+    totalCostCents: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+  }),
 };
+
+/** Create input with unique taskId to prevent child workflow ID collisions. */
+function makeInput(
+  taskId: string,
+  overrides: Partial<TaskWorkflowInput> = {},
+): TaskWorkflowInput {
+  return {
+    taskId,
+    repoId: "repo-1",
+    repoOwner: "test-org",
+    repoName: "test-repo",
+    objective: "Add a README",
+    autonomyLevel: "L2", // L2 skips implement approval gate; L1 tested in implement-phase.test.ts
+    config: {
+      reviewTimeoutMs: 14_400_000,
+      costBudgetCents: 1000,
+      maxImplementationAttempts: 3,
+    },
+    trustedContext: mockTrustedContext,
+    ...overrides,
+  };
+}
+
+/**
+ * Poll for a child workflow to reach RUNNING state, then signal it.
+ * Time-skipping is locked during polling (counter=1), so timers don't fire.
+ */
+async function signalChildWhenRunning(
+  childId: string,
+  signal:
+    | typeof approveSignal
+    | typeof rejectSignal
+    | typeof changesRequestedSignal,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const handle = testEnv.client.workflow.getHandle(childId);
+  for (let i = 0; i < 80; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      const desc = await handle.describe();
+      if (desc.status.name === "RUNNING") {
+        await handle.signal(signal, payload as never);
+        return;
+      }
+    } catch {
+      // Child not started yet
+    }
+  }
+  throw new Error(`Child workflow ${childId} never reached RUNNING state`);
+}
 
 beforeAll(async () => {
   testEnv = await TestWorkflowEnvironment.createTimeSkipping();
@@ -98,18 +239,25 @@ describe("taskOrchestrator", () => {
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
         taskQueue: "test-orch-start",
         workflowId: "orch-start-1",
-        args: [defaultInput],
+        args: [
+          makeInput("start1", {
+            // Short review timeout: review times out instantly → state="failed"
+            config: {
+              reviewTimeoutMs: 1,
+              costBudgetCents: 1000,
+              maxImplementationAttempts: 3,
+            },
+          }),
+        ],
       });
 
-      // Wait briefly for workflow to progress
-      await new Promise((r) => setTimeout(r, 500));
+      // With reviewTimeoutMs=1, review times out → workflow completes with "failed"
+      await handle.result();
 
       const progress = await handle.query(getProgressQuery);
-      expect(progress.taskId).toBe("t1");
-
-      // Kill to end cleanly
-      await handle.signal(killSignal, { actor: "test" });
-      await handle.result();
+      expect(progress.taskId).toBe("start1");
+      expect(progress.attemptNumber).toBe(1);
+      expect(progress.startedAt).toBeTruthy();
     });
   });
 
@@ -122,23 +270,32 @@ describe("taskOrchestrator", () => {
     });
 
     await worker.runUntil(async () => {
+      // Use full review timeout so workflow blocks at review
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
         taskQueue: "test-orch-kill",
         workflowId: "orch-kill-1",
-        args: [defaultInput],
+        args: [makeInput("kill1")],
       });
 
-      await new Promise((r) => setTimeout(r, 200));
+      // Wait for the review child to start (workflow has reached review phase)
+      await signalChildWhenRunning("task-kill1-review-0", approveSignal, {
+        actor: "system",
+      });
+
+      // Send kill to parent while review is completing
       await handle.signal(killSignal, {
         actor: "operator",
         reason: "emergency",
       });
+
+      // result() unlocks time-skipping — workflow completes
       await handle.result();
 
+      // Kill cleanup sets state to "cancelled" even though review approved
       const state = await handle.query(getStateQuery);
       expect(state).toBe("cancelled");
     });
-  });
+  }, 30_000);
 
   it("queries return valid progress", async () => {
     const worker = await Worker.create({
@@ -149,26 +306,39 @@ describe("taskOrchestrator", () => {
     });
 
     await worker.runUntil(async () => {
+      // Use full review timeout so workflow blocks at review
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
         taskQueue: "test-orch-q",
         workflowId: "orch-q-1",
-        args: [defaultInput],
+        args: [makeInput("query1")],
       });
 
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for workflow to reach review (queries are safe while time-skipping locked)
+      for (let i = 0; i < 80; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        try {
+          const phase = await handle.query(getPhaseQuery);
+          if (phase === "review") break;
+        } catch {
+          // Workflow may not be ready for queries yet
+        }
+      }
 
       const progress = await handle.query(getProgressQuery);
-      expect(progress.taskId).toBe("t1");
+      expect(progress.taskId).toBe("query1");
       expect(progress.attemptNumber).toBe(1);
       expect(progress.startedAt).toBeTruthy();
 
       const phase = await handle.query(getPhaseQuery);
-      expect(typeof phase).toBe("string");
+      expect(phase).toBe("review");
 
-      await handle.signal(killSignal, { actor: "test" });
+      // Approve review and complete
+      await signalChildWhenRunning("task-query1-review-0", approveSignal, {
+        actor: "reviewer",
+      });
       await handle.result();
     });
-  });
+  }, 30_000);
 
   it("approve signal to child review → continues to pr_creation and completes", async () => {
     const worker = await Worker.create({
@@ -182,39 +352,21 @@ describe("taskOrchestrator", () => {
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
         taskQueue: "test-orch-approve",
         workflowId: "orch-approve-1",
-        args: [
-          {
-            ...defaultInput,
-            taskId: "approve1",
-          },
-        ],
+        args: [makeInput("approve1")],
       });
 
-      // Signal the child review workflow directly
-      // Child ID = task-{taskId}-review
-      const reviewHandle = testEnv.client.workflow.getHandle(
-        "task-approve1-review-0",
-      );
+      // Signal-before-result: time-skipping is locked (counter=1) so the
+      // 4-hour review timeout won't fire during polling.
+      await signalChildWhenRunning("task-approve1-review-0", approveSignal, {
+        actor: "reviewer",
+      });
 
-      // Poll until child review workflow exists
-      for (let i = 0; i < 50; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        try {
-          const desc = await reviewHandle.describe();
-          if (desc.status.name === "RUNNING") {
-            await reviewHandle.signal(approveSignal, { actor: "reviewer" });
-            break;
-          }
-        } catch {
-          // Child not started yet
-        }
-      }
-
+      // Now call result() — unlocks time-skipping, but condition is satisfied
       await handle.result();
       const finalState = await handle.query(getStateQuery);
       expect(finalState).toBe("merged");
     });
-  });
+  }, 30_000);
 
   it("reject signal to child review → workflow transitions to failed", async () => {
     const worker = await Worker.create({
@@ -228,39 +380,19 @@ describe("taskOrchestrator", () => {
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
         taskQueue: "test-orch-reject",
         workflowId: "orch-reject-1",
-        args: [
-          {
-            ...defaultInput,
-            taskId: "reject1",
-          },
-        ],
+        args: [makeInput("reject1")],
       });
 
-      const reviewHandle = testEnv.client.workflow.getHandle(
-        "task-reject1-review-0",
-      );
-
-      for (let i = 0; i < 50; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        try {
-          const desc = await reviewHandle.describe();
-          if (desc.status.name === "RUNNING") {
-            await reviewHandle.signal(rejectSignal, {
-              actor: "reviewer",
-              reason: "not acceptable",
-            });
-            break;
-          }
-        } catch {
-          // Child not started yet
-        }
-      }
+      await signalChildWhenRunning("task-reject1-review-0", rejectSignal, {
+        actor: "reviewer",
+        reason: "not acceptable",
+      });
 
       await handle.result();
       const finalState = await handle.query(getStateQuery);
       expect(finalState).toBe("failed");
     });
-  });
+  }, 30_000);
 
   it("changes_requested signal loops back to implement", async () => {
     const worker = await Worker.create({
@@ -274,60 +406,29 @@ describe("taskOrchestrator", () => {
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
         taskQueue: "test-orch-changes",
         workflowId: "orch-changes-1",
-        args: [
-          {
-            ...defaultInput,
-            taskId: "changes1",
-          },
-        ],
+        args: [makeInput("changes1")],
       });
 
       // First review: send changes_requested
-      const review1Handle = testEnv.client.workflow.getHandle(
+      await signalChildWhenRunning(
         "task-changes1-review-0",
+        changesRequestedSignal,
+        { actor: "reviewer", message: "fix tests" },
       );
-      for (let i = 0; i < 50; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        try {
-          const desc = await review1Handle.describe();
-          if (desc.status.name === "RUNNING") {
-            await review1Handle.signal(changesRequestedSignal, {
-              actor: "reviewer",
-              message: "fix tests",
-            });
-            break;
-          }
-        } catch {
-          // Not started yet
-        }
-      }
 
-      // After changes_requested, the orchestrator loops back to implement.
-      // phaseIteration increments to 1, so the second review child ID is review-1.
+      // After changes_requested, orchestrator loops back to implement.
+      // phaseIteration increments to 1, so the second review child is review-1.
       await new Promise((r) => setTimeout(r, 1000));
 
-      // Check phaseIteration increased
       const progress = await handle.query(getProgressQuery);
       expect(progress.phaseIteration).toBeGreaterThanOrEqual(1);
 
-      // Approve the second review (iteration 1) to let workflow complete
-      const review2Handle = testEnv.client.workflow.getHandle(
-        "task-changes1-review-1",
-      );
-      for (let i = 0; i < 50; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        try {
-          const desc = await review2Handle.describe();
-          if (desc.status.name === "RUNNING") {
-            await review2Handle.signal(approveSignal, { actor: "reviewer" });
-            break;
-          }
-        } catch {
-          // Not started yet
-        }
-      }
+      // Approve the second review to let workflow complete
+      await signalChildWhenRunning("task-changes1-review-1", approveSignal, {
+        actor: "reviewer",
+      });
 
       await handle.result();
     });
-  });
+  }, 30_000);
 });
