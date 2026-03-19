@@ -353,7 +353,13 @@ software-factory/
   - [x] Step 5 — Final verification: lint, typecheck, full test suite → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add validation pipeline with trusted validator boundary, test/lint/security runners, and blast radius analysis"
 - [ ] **M14: Evidence Generation** — Evidence packet schema, annotated diffs, risk summary, artifact storage in MinIO
-- [ ] **M15: Human Review Flow** — CLI `evidence` / `approve` / `reject` / `changes` commands, review state management
+- [x] **M15: Human Review Flow** — CLI `evidence` / `approve` / `reject` / `changes` commands, review state management
+  - [x] Step 1 — Install CLI deps (commander, chalk, ora, @inquirer/prompts, @iarna/toml) + CLI config + API client → verify: `pnpm install && pnpm typecheck --filter @software-factory/cli`
+  - [x] Step 2 — API signal endpoints (approve/reject/changes/kill/evidence/freshness) + Temporal client augmentation → verify: `pnpm typecheck --filter @software-factory/api`
+  - [x] Step 3 — CLI commands (status, evidence, approve, reject, changes, review, config, health) + evidence display UI → verify: `cd packages/cli && npx tsx src/index.ts --help`
+  - [x] Step 4 — CLI tests (config, api-client, evidence-display, commands) → verify: `pnpm test --filter @software-factory/cli`
+  - [x] Step 5 — API signal tests (task-signals) → verify: `pnpm test --filter @software-factory/api`
+  Commit: "feat: add human review flow with CLI commands, API signal endpoints, and evidence display"
 
 ### Phase 4: PR + Merge Lifecycle — *"GitHub becomes involved"*
 

@@ -1,12 +1,23 @@
 {
   "name": "@software-factory/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "factory": "./src/index.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@inquirer/prompts": "^8.3.2",
     "@software-factory/core": "workspace:*",
-    "@software-factory/db": "workspace:*"
+    "@software-factory/db": "workspace:*",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "ora": "^9.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15"
   }
 }

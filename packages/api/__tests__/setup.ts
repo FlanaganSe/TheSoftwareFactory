@@ -24,6 +24,10 @@ const MIGRATION_1 = readFileSync(
   join(__dirname, "../../db/drizzle/0001_custom_triggers_rls_seeds.sql"),
   "utf8",
 );
+const MIGRATION_2 = readFileSync(
+  join(__dirname, "../../db/drizzle/0002_last_argent.sql"),
+  "utf8",
+);
 
 const INIT_SQL = readFileSync(
   join(__dirname, "../../..", "scripts/init-db.sql"),
@@ -64,6 +68,19 @@ export async function setupTestApp(): Promise<TestContext> {
     }
   }
   await setupPool.query(MIGRATION_1);
+  // Migration 0002 has an ALTER TYPE that needs USING clause
+  for (const stmt of MIGRATION_2.split("--> statement-breakpoint")) {
+    const trimmed = stmt.trim();
+    if (!trimmed) continue;
+    // Fix: Postgres can't auto-cast text→integer; add USING clause
+    const fixed = trimmed.includes("SET DATA TYPE integer")
+      ? trimmed.replace(
+          "SET DATA TYPE integer",
+          "SET DATA TYPE integer USING schema_version::integer",
+        )
+      : trimmed;
+    await setupPool.query(fixed);
+  }
   await setupPool.end();
 
   // Create the app's DB connection
