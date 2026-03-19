@@ -290,14 +290,20 @@ software-factory/
   - [x] Step 4 — Create GitHub auth modules (credential-broker, client, rate-limiter) in temporal-activities → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
   - [x] Step 5 — Write tests (API: health, auth, role-auth, webhooks, api-keys; GitHub: credential-broker, rate-limiter, client) → verify: `pnpm test`
   Commit: "feat: add GitHub App foundation, API server with auth, webhooks, and role enforcement"
-- [ ] **M6: Repository Capability Scan** — 10-step scan producing structured report (rulesets, CODEOWNERS, merge queue, signed commits)
-  - [ ] Step 1 — Create CapabilitySnapshot Zod schemas in core (all sub-schemas + barrel export) → verify: `pnpm typecheck --filter @software-factory/core`
-  - [ ] Step 2 — Install yaml dep, create codeowners-parser, workflow-scanner, ruleset-analyzer in temporal-activities → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
-  - [ ] Step 3 — Create capability-scan orchestrator (10-step scan) + barrel export → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
-  - [ ] Step 4 — Write all tests (core schema, codeowners, workflow-scanner, ruleset-analyzer, capability-scan) → verify: `pnpm test`
-  - [ ] Step 5 — Final verification (typecheck + lint + test all pass) → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
+- [x] **M6: Repository Capability Scan** — 10-step scan producing structured report (rulesets, CODEOWNERS, merge queue, signed commits)
+  - [x] Step 1 — Create CapabilitySnapshot Zod schemas in core (all sub-schemas + barrel export) → verify: `pnpm typecheck --filter @software-factory/core`
+  - [x] Step 2 — Install yaml dep, create codeowners-parser, workflow-scanner, ruleset-analyzer in temporal-activities → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
+  - [x] Step 3 — Create capability-scan orchestrator (10-step scan) + barrel export → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
+  - [x] Step 4 — Write all tests (core schema, codeowners, workflow-scanner, ruleset-analyzer, capability-scan) → verify: `pnpm test`
+  - [x] Step 5 — Final verification (typecheck + lint + test all pass) → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add repository capability scan with CODEOWNERS parser, ruleset analyzer, and workflow scanner"
-- [ ] **M7: Code Indexing Pipeline** — tree-sitter parsing, symbol extraction, repo map generation, governance filter
+- [x] **M7: Code Indexing Pipeline** — tree-sitter parsing, symbol extraction, repo map generation, governance filter
+  - [x] Step 1 — Install tree-sitter deps, create parser.ts + governance-filter.ts + types → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
+  - [x] Step 2 — Create symbol-extractor.ts + import-extractor.ts → verify: `pnpm typecheck --filter @software-factory/temporal-activities`
+  - [x] Step 3 — Create repo-map.ts (PageRank) + queries.ts + index-repository.ts (db) + indexer.ts (10-step pipeline) + barrel exports → verify: `pnpm typecheck`
+  - [x] Step 4 — Write all unit tests (governance-filter, symbol-extractor, import-extractor, repo-map, parser) + db tests (index-repository) → verify: `pnpm test`
+  - [x] Step 5 — Final verification (typecheck + lint + test all pass) → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
+  Commit: "feat: add code indexing pipeline with tree-sitter parsing, symbol extraction, and PageRank repo map"
 - [ ] **M8: Observer Mode CLI** — `factory repo scan` command producing readiness report with setup contract generation
 
 ### Phase 2: Guided Execution — *"The agent can now write code"*

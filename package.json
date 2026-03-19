@@ -13,7 +13,16 @@
     "clean": "pnpm -r exec -- rm -rf dist *.tsbuildinfo"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild",
+      "tree-sitter-go",
+      "tree-sitter-java",
+      "tree-sitter-javascript",
+      "tree-sitter-python",
+      "tree-sitter-rust",
+      "tree-sitter-typescript"
+    ]
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

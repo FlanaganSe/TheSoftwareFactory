@@ -36,3 +36,29 @@ export {
   scanWorkflows,
 } from "./github/workflow-scanner.js";
 export type { WorkflowScanResult } from "./github/workflow-scanner.js";
+
+// === Code Indexing ===
+export {
+  indexRepository,
+  createParser,
+  detectLanguage,
+  extractSymbols,
+  extractImports,
+  generateRepoMap,
+  filterPaths,
+} from "./indexing/index.js";
+export type {
+  Tag,
+  SymbolKind,
+  ImportEdge,
+  ImportType,
+  SupportedLanguage,
+  ParseResult,
+  ParserBackend,
+  RepoMapEntry,
+  RepoMapOptions,
+  IndexOptions,
+  IndexResult,
+  FilterResult,
+  IndexedFile,
+} from "./indexing/index.js";

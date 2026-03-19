@@ -13,6 +13,7 @@ export * as policyRepo from "./repositories/policy-repository.js";
 export * as webhookRepo from "./repositories/webhook-repository.js";
 export * as sideEffectRepo from "./repositories/side-effect-repository.js";
 export * as apiKeyRepo from "./repositories/api-key-repository.js";
+export * as indexRepo from "./repositories/index-repository.js";
 
 // Encryption
 export type { EncryptedPayload } from "./encryption/envelope.js";
