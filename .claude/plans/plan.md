@@ -325,7 +325,13 @@ software-factory/
   - [x] Step 4 — Create activities.ts, update activity-types.ts, worker.ts, index.ts → verify: `pnpm typecheck && pnpm lint`
   - [x] Step 5 — Write unit tests (secrets, cache, monitor) + integration tests (supervisor, network, cache) → verify: `pnpm test`
   Commit: "feat: add Docker sandbox supervisor with 6-phase lifecycle, network isolation, and secret injection"
-- [ ] **M11: LLM Agent Core** — Vercel AI SDK integration, OpenRouter config, tool execution framework, edit format, context management
+- [x] **M11: LLM Agent Core** — Vercel AI SDK integration, OpenRouter config, tool execution framework, edit format, context management
+  - [x] Step 1 — Install deps (`ai`, `@openrouter/ai-sdk-provider`, `js-tiktoken`, `diff`, `@types/diff`) + create `src/llm/` directory with provider.ts, edit-format.ts, prompt-safety.ts, guardrails.ts → verify: `pnpm install && pnpm typecheck`
+  - [x] Step 2 — Create context.ts, cost-tracker.ts, tools.ts, agent.ts, activities.ts, barrel index.ts; update temporal-activities/src/index.ts and temporal-workflows/src/activity-types.ts → verify: `pnpm typecheck && pnpm lint`
+  - [x] Step 3 — Write unit tests: edit-format.test.ts (15), guardrails.test.ts (16), prompt-safety.test.ts (15), context.test.ts (10) → verify: all pass
+  - [x] Step 4 — Write unit tests: tools.test.ts (15), cost-tracker.test.ts (8), agent.test.ts (6) → verify: all pass
+  - [x] Step 5 — Full quality pass → verify: typecheck + lint pass, 85 new tests pass (530 total, 3 pre-existing failures in safety/Redis tests)
+  Commit: "feat: add LLM agent core with OpenRouter provider, 7 governance-enforced tools, progressive edit format, and 5 self-healing guardrails"
 - [ ] **M12: Task Execution Pipeline** — Wire intake → understand → plan → implement loop through Temporal with sandbox + LLM
 
 ### Phase 3: Validation + Evidence — *"Proving the work is safe"*

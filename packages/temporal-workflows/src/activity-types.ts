@@ -140,8 +140,28 @@ export interface GitHubActivities {
   scanRepository(owner: string, repo: string): Promise<unknown>;
 }
 
+export interface AgentStepConfig {
+  readonly taskId: string;
+  readonly objective: string;
+  readonly plan?: string;
+  readonly model: string;
+  readonly budgetCents: number;
+  readonly maxSteps: number;
+  readonly wallClockTimeoutMs: number;
+}
+
+export interface AgentStepResult {
+  readonly success: boolean;
+  readonly filesModified: readonly string[];
+  readonly toolCallCount: number;
+  readonly totalCostCents: number;
+  readonly totalInputTokens: number;
+  readonly totalOutputTokens: number;
+  readonly guardrailTripped?: string;
+}
+
 export interface LLMActivities {
-  executeAgent(config: unknown): Promise<unknown>;
+  executeAgentStep(config: AgentStepConfig): Promise<AgentStepResult>;
 }
 
 export interface IndexActivities {
