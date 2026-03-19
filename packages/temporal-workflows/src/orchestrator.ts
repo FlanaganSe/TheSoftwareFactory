@@ -22,18 +22,24 @@ import {
 import { Mutex } from "async-mutex";
 
 import type { ImplementResult } from "./phases/implement.js";
+import type { PrCreationFullResult } from "./phases/pr-creation.js";
+import type { PrTrackingResult } from "./phases/pr-tracking.js";
 import type { SetupResult } from "./phases/setup.js";
 import type { UnderstandResult } from "./phases/understand.js";
 import type { ValidateResult } from "./phases/validate.js";
 import {
   approveSignal,
   changesRequestedSignal,
+  checkCompleteSignal,
   clarifyResponseSignal,
   costOverrideSignal,
   getPhaseQuery,
   getProgressQuery,
   getStateQuery,
   killSignal,
+  mergeQueueUpdateSignal,
+  prClosedSignal,
+  prReviewSignal,
   rejectSignal,
   resumeSignal,
 } from "./signals.js";
@@ -119,6 +125,8 @@ export async function taskOrchestrator(
         readonly artifactPrefix: string;
       }
     | undefined;
+  let prResult: PrCreationFullResult | undefined;
+  let addressingFeedback = false;
 
   // ─── Signal Handlers ───
 
@@ -174,6 +182,44 @@ export async function taskOrchestrator(
   });
 
   setHandler(clarifyResponseSignal, async () => {
+    const release = await mutex.acquire();
+    try {
+      lastActivityAt = new Date().toISOString();
+    } finally {
+      release();
+    }
+  });
+
+  // GitHub lifecycle signals — forwarded to child pr_tracking workflow.
+  // Parent handlers prevent "unhandled signal" warnings and track activity.
+  setHandler(prReviewSignal, async () => {
+    const release = await mutex.acquire();
+    try {
+      lastActivityAt = new Date().toISOString();
+    } finally {
+      release();
+    }
+  });
+
+  setHandler(checkCompleteSignal, async () => {
+    const release = await mutex.acquire();
+    try {
+      lastActivityAt = new Date().toISOString();
+    } finally {
+      release();
+    }
+  });
+
+  setHandler(prClosedSignal, async () => {
+    const release = await mutex.acquire();
+    try {
+      lastActivityAt = new Date().toISOString();
+    } finally {
+      release();
+    }
+  });
+
+  setHandler(mergeQueueUpdateSignal, async () => {
     const release = await mutex.acquire();
     try {
       lastActivityAt = new Date().toISOString();
@@ -259,7 +305,8 @@ export async function taskOrchestrator(
       phase === "implement" ||
       phase === "validate" ||
       phase === "evidence" ||
-      phase === "review";
+      phase === "review" ||
+      phase === "pr_tracking";
     const childId = needsIteration
       ? `task-${input.taskId}-${phase}-${phaseIteration}`
       : `task-${input.taskId}-${phase}`;
@@ -540,40 +587,50 @@ export async function taskOrchestrator(
         });
       }
     } else if (phase === "review") {
-      const reviewResult = await executeChild("reviewPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            reviewTimeoutMs: input.config.reviewTimeoutMs,
-          },
-        ],
-      });
-
-      if (reviewResult.outcome === "approved") {
+      if (addressingFeedback) {
+        // Skip internal review when re-entering after external review feedback.
+        // The PR already exists and the external reviewer is tracking it.
         currentState = "approved";
-        // Continue to pr_creation
-      } else if (reviewResult.outcome === "changes_requested") {
-        // Loop back to implement
-        phaseIteration++;
-        if (phaseIteration < input.config.maxImplementationAttempts) {
-          // Jump back to implement phase
-          i = PHASE_ORDER.indexOf("implement") - 1; // -1 because loop increments
-          currentState = "changes_requested";
-          continue;
+      } else {
+        const reviewResult = await executeChild("reviewPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              reviewTimeoutMs: input.config.reviewTimeoutMs,
+            },
+          ],
+        });
+
+        if (reviewResult.outcome === "approved") {
+          currentState = "approved";
+          // Continue to pr_creation
+        } else if (reviewResult.outcome === "changes_requested") {
+          // Loop back to implement
+          phaseIteration++;
+          if (phaseIteration < input.config.maxImplementationAttempts) {
+            // Jump back to implement phase
+            i = PHASE_ORDER.indexOf("implement") - 1; // -1 because loop increments
+            currentState = "changes_requested";
+            continue;
+          }
+          // Max attempts exceeded — fail
+          currentState = "failed";
+          break;
+        } else if (reviewResult.outcome === "rejected") {
+          currentState = "failed";
+          break;
+        } else if (reviewResult.outcome === "timed_out") {
+          currentState = "failed";
+          break;
         }
-        // Max attempts exceeded — fail
-        currentState = "failed";
-        break;
-      } else if (reviewResult.outcome === "rejected") {
-        currentState = "failed";
-        break;
-      } else if (reviewResult.outcome === "timed_out") {
-        currentState = "failed";
-        break;
       }
     } else if (phase === "pr_creation") {
-      if (patched("m16-real-pr-creation")) {
+      if (addressingFeedback) {
+        // Skip PR creation on feedback loop — PR already exists.
+        // The implement phase pushed new commits to the existing branch.
+        currentState = "pr_created";
+      } else if (patched("m16-real-pr-creation")) {
         const defaultContext: TrustedBaseContext = trustedContext ?? {
           baseSha: "HEAD",
           setupContract: null,
@@ -602,7 +659,7 @@ export async function taskOrchestrator(
           revertabilityClass: vr?.revertabilityClass ?? "clean_revert",
         };
 
-        const prResult = await executeChild("prCreationPhase", {
+        prResult = (await executeChild("prCreationPhase", {
           workflowId: childId,
           args: [
             {
@@ -682,9 +739,8 @@ export async function taskOrchestrator(
               ),
             },
           ],
-        });
+        })) as PrCreationFullResult;
         currentState = "pr_created";
-        void prResult;
       } else {
         await executeChild("prCreationPhase", {
           workflowId: childId,
@@ -693,11 +749,62 @@ export async function taskOrchestrator(
         currentState = "pr_created";
       }
     } else if (phase === "pr_tracking") {
-      await executeChild("prTrackingPhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId, prNumber: 0 }],
-      });
-      currentState = "merged";
+      if (patched("m17-real-pr-tracking")) {
+        const trackingResult = (await executeChild("prTrackingPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              owner: input.repoOwner,
+              repo: input.repoName,
+              prNumber: prResult?.prNumber ?? 0,
+              prNodeId: prResult?.prNodeId ?? "",
+              headSha: implementResult?.headSha ?? "",
+              baseBranch: capabilitySnapshot?.defaultBranch ?? "main",
+              requiredChecks:
+                capabilitySnapshot?.requiredStatusChecks?.map(
+                  (c) => c.context,
+                ) ?? [],
+              requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
+              requiresCodeOwnerReview:
+                capabilitySnapshot?.requiresCodeOwnerReview ?? false,
+            },
+          ],
+        })) as PrTrackingResult;
+
+        if (trackingResult.outcome === "merge_ready") {
+          currentState = "merge_ready";
+          // Continue to learn phase (M18 will add merge execution)
+        } else if (trackingResult.outcome === "changes_requested") {
+          // External review feedback → loop back to implement
+          addressingFeedback = true;
+          phaseIteration++;
+          if (phaseIteration < input.config.maxImplementationAttempts) {
+            i = PHASE_ORDER.indexOf("implement") - 1;
+            currentState = "changes_requested";
+            continue;
+          }
+          currentState = "failed";
+          break;
+        } else if (trackingResult.outcome === "pr_closed_merged") {
+          currentState = "merged";
+          // Continue to learn
+        } else if (trackingResult.outcome === "pr_closed_unmerged") {
+          currentState = "failed";
+          break;
+        } else if (trackingResult.outcome === "timed_out") {
+          currentState = "failed";
+          break;
+        }
+      } else {
+        // Old stub
+        await executeChild("prTrackingPhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId, prNumber: 0 }],
+        });
+        currentState = "merged";
+      }
     } else if (phase === "learn") {
       await executeChild("learnPhase", {
         workflowId: childId,

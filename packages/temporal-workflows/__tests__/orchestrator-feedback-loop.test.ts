@@ -2,32 +2,20 @@ import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TaskWorkflowInput } from "../src/orchestrator.js";
-import {
-  approveSignal,
-  changesRequestedSignal,
-  getPhaseQuery,
-  getProgressQuery,
-  getStateQuery,
-  killSignal,
-  rejectSignal,
-} from "../src/signals.js";
+import { getProgressQuery, getStateQuery } from "../src/signals.js";
 
 let testEnv: TestWorkflowEnvironment;
 
-// ─── Shared test data ───
-
-const mockSetupContract = {
-  version: "1",
-  image: "node:22-slim",
-  setup: [],
-  maintenance: [],
-  secrets: { setup_only: [], runtime: [], per_tool: [] },
-  health_check: [],
-};
-
 const mockTrustedContext = {
   baseSha: "abc123",
-  setupContract: mockSetupContract,
+  setupContract: {
+    version: "1",
+    image: "node:22-slim",
+    setup: [],
+    maintenance: [],
+    secrets: { setup_only: [], runtime: [], per_tool: [] },
+    health_check: [],
+  },
   policySnapshot: [],
   behavioralControlFiles: {},
   validationCommandSources: [],
@@ -50,13 +38,13 @@ const mockCapabilitySnapshot = {
   codeowners: null,
   mergeQueue: null,
   allowedMergeStrategies: ["squash" as const],
-  requiredStatusChecks: [],
+  requiredStatusChecks: [{ context: "ci/test" }],
   requiredWorkflows: [],
   requiresSignedCommits: false,
   requiresLinearHistory: false,
   requiresConversationResolution: false,
   dismissesStaleReviews: false,
-  requiredReviewCount: 0,
+  requiredReviewCount: 1,
   requiresCodeOwnerReview: false,
   lastPusherCannotApprove: false,
   hasPullRequestTargetWorkflows: false,
@@ -70,31 +58,36 @@ const mockCapabilitySnapshot = {
   warnings: [],
 };
 
-const mockTaskRecord = {
-  id: "t1",
-  state: "created" as const,
-  objective: "Add a README",
-  repoId: "repo-1",
-  createdBy: "system",
-  autonomyLevel: "L2",
-  scope: null,
-  constraints: null,
-  budgetCents: null,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
-
 const mockActivities = {
-  // DB activities
-  createTask: async () => mockTaskRecord,
+  createTask: async () => ({
+    id: "t1",
+    state: "created" as const,
+    objective: "Add a README",
+    repoId: "repo-1",
+    createdBy: "system",
+    autonomyLevel: "L2",
+    scope: null,
+    constraints: null,
+    budgetCents: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }),
   transitionTaskState: async (_taskId: string, newState: string) => ({
-    ...mockTaskRecord,
+    id: "t1",
     state: newState,
+    objective: "Add a README",
+    scope: null,
+    constraints: null,
+    budgetCents: null,
+    repoId: "repo-1",
+    autonomyLevel: "L2",
+    createdBy: "system",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   }),
   getTask: async () => ({ id: "t1", state: "assigned" }),
   listActiveTasks: async () => [],
   insertAuditEntry: async () => {},
-  // Safety activities
   checkKillSwitch: async () => ({ killed: false, scope: "none" as const }),
   checkCostBudget: async () => ({
     allowed: true,
@@ -111,7 +104,6 @@ const mockActivities = {
     percentUsed: 0,
     overBudget: false,
   }),
-  // GitHub activities
   scanRepository: async () => mockCapabilitySnapshot,
   captureTrustedContext: async () => mockTrustedContext,
   createCandidateBranch: async () => ({
@@ -120,7 +112,6 @@ const mockActivities = {
   }),
   pushChanges: async () => ({ commitSha: "def456" }),
   cloneRepo: async () => ({ path: "/tmp/factory/t1/repo", headSha: "abc123" }),
-  // Index activities
   indexRepositoryActivity: async () => ({
     indexVersionId: "idx-1",
     totalFiles: 10,
@@ -138,12 +129,10 @@ const mockActivities = {
       },
     ],
   }),
-  // Plan activities
   generatePlan: async () => ({
     plan: "## Plan\n### Step 1\n- **Files:** src/index.ts",
     estimatedFiles: ["src/index.ts"],
   }),
-  // Sandbox activities
   provisionSandbox: async () => ({
     containerId: "container-1",
     phase: "execution",
@@ -157,7 +146,6 @@ const mockActivities = {
   }),
   destroySandbox: async () => {},
   cleanupOrphans: async () => 0,
-  // LLM activities
   executeAgentStep: async () => ({
     success: true,
     filesModified: [],
@@ -166,7 +154,6 @@ const mockActivities = {
     totalInputTokens: 0,
     totalOutputTokens: 0,
   }),
-  // Validation activities (M13)
   getChangedFiles: async () => [],
   runTests: async () => ({
     testResults: {
@@ -212,7 +199,6 @@ const mockActivities = {
     revertabilityClass: "clean_revert",
   }),
   checkValidatorBoundary: async () => [],
-  // Evidence activities (M14)
   generateAndPersistEvidence: async () => ({
     bundleId: "bundle-001",
     locator: {
@@ -233,7 +219,6 @@ const mockActivities = {
     },
     passed: true,
   }),
-  // PR activities (M16)
   createPullRequest: async () => ({
     prNumber: 42,
     prUrl: "https://github.com/test-org/test-repo/pull/42",
@@ -262,7 +247,6 @@ const mockActivities = {
   }),
 };
 
-/** Create input with unique taskId to prevent child workflow ID collisions. */
 function makeInput(
   taskId: string,
   overrides: Partial<TaskWorkflowInput> = {},
@@ -273,7 +257,7 @@ function makeInput(
     repoOwner: "test-org",
     repoName: "test-repo",
     objective: "Add a README",
-    autonomyLevel: "L2", // L2 skips implement approval gate; L1 tested in implement-phase.test.ts
+    autonomyLevel: "L2",
     config: {
       reviewTimeoutMs: 14_400_000,
       costBudgetCents: 1000,
@@ -284,16 +268,9 @@ function makeInput(
   };
 }
 
-/**
- * Poll for a child workflow to reach RUNNING state, then signal it.
- * Time-skipping is locked during polling (counter=1), so timers don't fire.
- */
 async function signalChildWhenRunning(
   childId: string,
-  signal:
-    | typeof approveSignal
-    | typeof rejectSignal
-    | typeof changesRequestedSignal,
+  signalName: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
   const handle = testEnv.client.workflow.getHandle(childId);
@@ -302,7 +279,7 @@ async function signalChildWhenRunning(
     try {
       const desc = await handle.describe();
       if (desc.status.name === "RUNNING") {
-        await handle.signal(signal, payload as never);
+        await handle.signal(signalName, payload);
         return;
       }
     } catch {
@@ -320,210 +297,171 @@ afterAll(async () => {
   await testEnv?.teardown();
 });
 
-describe("taskOrchestrator", () => {
-  it("starts and progresses through phases", async () => {
+describe("orchestrator feedback loop (M17)", () => {
+  it("pr_tracking returns merge_ready → orchestrator continues to learn", async () => {
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
-      taskQueue: "test-orch-start",
+      taskQueue: "test-orch-fb-merge",
       workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
       activities: mockActivities,
     });
 
     await worker.runUntil(async () => {
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
-        taskQueue: "test-orch-start",
-        workflowId: "orch-start-1",
+        taskQueue: "test-orch-fb-merge",
+        workflowId: "orch-fb-merge-1",
+        args: [makeInput("fbmerge1")],
+      });
+
+      // First, approve internal review
+      await signalChildWhenRunning("task-fbmerge1-review-0", "approve", {
+        actor: "reviewer",
+      });
+
+      // Then signal PR tracking with approval + check pass → merge_ready
+      await signalChildWhenRunning("task-fbmerge1-pr_tracking-0", "pr_review", {
+        action: "submitted",
+        state: "approved",
+        reviewer: "external",
+      });
+      const trackingHandle = testEnv.client.workflow.getHandle(
+        "task-fbmerge1-pr_tracking-0",
+      );
+      await trackingHandle.signal("check_complete", {
+        checkName: "ci/test",
+        conclusion: "success",
+      });
+
+      await handle.result();
+      const state = await handle.query(getStateQuery);
+      expect(state).toBe("merge_ready");
+    });
+  }, 60_000);
+
+  it("pr_tracking returns changes_requested → orchestrator loops to implement", async () => {
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      taskQueue: "test-orch-fb-changes",
+      workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
+      activities: mockActivities,
+    });
+
+    await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start("taskOrchestrator", {
+        taskQueue: "test-orch-fb-changes",
+        workflowId: "orch-fb-changes-1",
+        args: [makeInput("fbchanges1")],
+      });
+
+      // Approve internal review (iteration 0)
+      await signalChildWhenRunning("task-fbchanges1-review-0", "approve", {
+        actor: "reviewer",
+      });
+
+      // PR tracking: external reviewer requests changes (iteration 0)
+      await signalChildWhenRunning(
+        "task-fbchanges1-pr_tracking-0",
+        "pr_review",
+        {
+          action: "submitted",
+          state: "changes_requested",
+          reviewer: "external",
+        },
+      );
+
+      // After changes_requested, orchestrator loops to implement.
+      // phaseIteration increments. The second pr_tracking child is pr_tracking-1.
+      // Signal the second PR tracking to complete with merge_ready
+      await signalChildWhenRunning(
+        "task-fbchanges1-pr_tracking-1",
+        "pr_review",
+        { action: "submitted", state: "approved", reviewer: "external" },
+      );
+      const trackingHandle2 = testEnv.client.workflow.getHandle(
+        "task-fbchanges1-pr_tracking-1",
+      );
+      await trackingHandle2.signal("check_complete", {
+        checkName: "ci/test",
+        conclusion: "success",
+      });
+
+      await handle.result();
+      const progress = await handle.query(getProgressQuery);
+      expect(progress.phaseIteration).toBeGreaterThanOrEqual(1);
+    });
+  }, 60_000);
+
+  it("max implementation attempts exceeded → orchestrator fails", async () => {
+    const worker = await Worker.create({
+      connection: testEnv.nativeConnection,
+      taskQueue: "test-orch-fb-max",
+      workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
+      activities: mockActivities,
+    });
+
+    await worker.runUntil(async () => {
+      const handle = await testEnv.client.workflow.start("taskOrchestrator", {
+        taskQueue: "test-orch-fb-max",
+        workflowId: "orch-fb-max-1",
         args: [
-          makeInput("start1", {
-            // Short review timeout: review times out instantly → state="failed"
+          makeInput("fbmax1", {
             config: {
-              reviewTimeoutMs: 1,
+              reviewTimeoutMs: 14_400_000,
               costBudgetCents: 1000,
-              maxImplementationAttempts: 3,
+              maxImplementationAttempts: 1, // Only 1 attempt allowed
             },
           }),
         ],
       });
 
-      // With reviewTimeoutMs=1, review times out → workflow completes with "failed"
+      // Approve internal review
+      await signalChildWhenRunning("task-fbmax1-review-0", "approve", {
+        actor: "reviewer",
+      });
+
+      // PR tracking: request changes — but max attempts = 1, so fail
+      await signalChildWhenRunning("task-fbmax1-pr_tracking-0", "pr_review", {
+        action: "submitted",
+        state: "changes_requested",
+        reviewer: "external",
+      });
+
       await handle.result();
-
-      const progress = await handle.query(getProgressQuery);
-      expect(progress.taskId).toBe("start1");
-      expect(progress.attemptNumber).toBe(1);
-      expect(progress.startedAt).toBeTruthy();
-    });
-  });
-
-  it("responds to kill signal between phases", async () => {
-    const worker = await Worker.create({
-      connection: testEnv.nativeConnection,
-      taskQueue: "test-orch-kill",
-      workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
-      activities: mockActivities,
-    });
-
-    await worker.runUntil(async () => {
-      // Use full review timeout so workflow blocks at review
-      const handle = await testEnv.client.workflow.start("taskOrchestrator", {
-        taskQueue: "test-orch-kill",
-        workflowId: "orch-kill-1",
-        args: [makeInput("kill1")],
-      });
-
-      // Wait for the review child to start (workflow has reached review phase)
-      await signalChildWhenRunning("task-kill1-review-0", approveSignal, {
-        actor: "system",
-      });
-
-      // Send kill to parent while review is completing
-      await handle.signal(killSignal, {
-        actor: "operator",
-        reason: "emergency",
-      });
-
-      // result() unlocks time-skipping — workflow completes
-      await handle.result();
-
-      // Kill cleanup sets state to "cancelled" even though review approved
       const state = await handle.query(getStateQuery);
-      expect(state).toBe("cancelled");
+      expect(state).toBe("failed");
     });
-  }, 30_000);
+  }, 60_000);
 
-  it("queries return valid progress", async () => {
+  it("pr_tracking returns pr_closed_merged → orchestrator sets merged state", async () => {
     const worker = await Worker.create({
       connection: testEnv.nativeConnection,
-      taskQueue: "test-orch-q",
-      workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
-      activities: mockActivities,
-    });
-
-    await worker.runUntil(async () => {
-      // Use full review timeout so workflow blocks at review
-      const handle = await testEnv.client.workflow.start("taskOrchestrator", {
-        taskQueue: "test-orch-q",
-        workflowId: "orch-q-1",
-        args: [makeInput("query1")],
-      });
-
-      // Wait for workflow to reach review (queries are safe while time-skipping locked)
-      for (let i = 0; i < 80; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        try {
-          const phase = await handle.query(getPhaseQuery);
-          if (phase === "review") break;
-        } catch {
-          // Workflow may not be ready for queries yet
-        }
-      }
-
-      const progress = await handle.query(getProgressQuery);
-      expect(progress.taskId).toBe("query1");
-      expect(progress.attemptNumber).toBe(1);
-      expect(progress.startedAt).toBeTruthy();
-
-      const phase = await handle.query(getPhaseQuery);
-      expect(phase).toBe("review");
-
-      // Approve review and complete
-      await signalChildWhenRunning("task-query1-review-0", approveSignal, {
-        actor: "reviewer",
-      });
-      await handle.result();
-    });
-  }, 30_000);
-
-  it("approve signal to child review → continues to pr_creation and completes", async () => {
-    const worker = await Worker.create({
-      connection: testEnv.nativeConnection,
-      taskQueue: "test-orch-approve",
+      taskQueue: "test-orch-fb-merged",
       workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
       activities: mockActivities,
     });
 
     await worker.runUntil(async () => {
       const handle = await testEnv.client.workflow.start("taskOrchestrator", {
-        taskQueue: "test-orch-approve",
-        workflowId: "orch-approve-1",
-        args: [makeInput("approve1")],
+        taskQueue: "test-orch-fb-merged",
+        workflowId: "orch-fb-merged-1",
+        args: [makeInput("fbmerged1")],
       });
 
-      // Signal-before-result: time-skipping is locked (counter=1) so the
-      // 4-hour review timeout won't fire during polling.
-      await signalChildWhenRunning("task-approve1-review-0", approveSignal, {
+      // Approve internal review
+      await signalChildWhenRunning("task-fbmerged1-review-0", "approve", {
         actor: "reviewer",
       });
 
-      // Now call result() — unlocks time-skipping, but condition is satisfied.
-      // With M17 real pr_tracking: 0 required reviews/checks → merge_ready immediately
-      await handle.result();
-      const finalState = await handle.query(getStateQuery);
-      expect(finalState).toBe("merge_ready");
-    });
-  }, 30_000);
-
-  it("reject signal to child review → workflow transitions to failed", async () => {
-    const worker = await Worker.create({
-      connection: testEnv.nativeConnection,
-      taskQueue: "test-orch-reject",
-      workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
-      activities: mockActivities,
-    });
-
-    await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start("taskOrchestrator", {
-        taskQueue: "test-orch-reject",
-        workflowId: "orch-reject-1",
-        args: [makeInput("reject1")],
-      });
-
-      await signalChildWhenRunning("task-reject1-review-0", rejectSignal, {
-        actor: "reviewer",
-        reason: "not acceptable",
-      });
-
-      await handle.result();
-      const finalState = await handle.query(getStateQuery);
-      expect(finalState).toBe("failed");
-    });
-  }, 30_000);
-
-  it("changes_requested signal loops back to implement", async () => {
-    const worker = await Worker.create({
-      connection: testEnv.nativeConnection,
-      taskQueue: "test-orch-changes",
-      workflowsPath: new URL("../src/index.ts", import.meta.url).pathname,
-      activities: mockActivities,
-    });
-
-    await worker.runUntil(async () => {
-      const handle = await testEnv.client.workflow.start("taskOrchestrator", {
-        taskQueue: "test-orch-changes",
-        workflowId: "orch-changes-1",
-        args: [makeInput("changes1")],
-      });
-
-      // First review: send changes_requested
+      // PR was merged externally
       await signalChildWhenRunning(
-        "task-changes1-review-0",
-        changesRequestedSignal,
-        { actor: "reviewer", message: "fix tests" },
+        "task-fbmerged1-pr_tracking-0",
+        "pr_closed",
+        { merged: true },
       );
 
-      // After changes_requested, orchestrator loops back to implement.
-      // phaseIteration increments to 1, so the second review child is review-1.
-      await new Promise((r) => setTimeout(r, 1000));
-
-      const progress = await handle.query(getProgressQuery);
-      expect(progress.phaseIteration).toBeGreaterThanOrEqual(1);
-
-      // Approve the second review to let workflow complete
-      await signalChildWhenRunning("task-changes1-review-1", approveSignal, {
-        actor: "reviewer",
-      });
-
       await handle.result();
+      const state = await handle.query(getStateQuery);
+      expect(state).toBe("merged");
     });
-  }, 30_000);
+  }, 60_000);
 });

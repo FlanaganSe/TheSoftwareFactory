@@ -33,6 +33,8 @@ import type { CreatePRConfig, PRResult, PRUpdates } from "./pr.js";
 import { createPRActivities } from "./pr.js";
 import type { SideEffectOps } from "./pr.js";
 import type { MutationSerializer } from "./rate-limiter.js";
+import type { ReconcileResult, ReconcilerConfig } from "./review-tracker.js";
+import { createReviewTrackerActivities } from "./review-tracker.js";
 import { createTrustedContextActivities } from "./trusted-context.js";
 
 export interface GitHubActivityDeps {
@@ -306,6 +308,35 @@ export function createGitHubActivities(deps: GitHubActivityDeps) {
               if (result.isErr()) throw toApplicationFailure(result.error);
               return result.value;
             },
+
+            async updateReviewState(
+              taskId: string,
+              updates: Partial<reviewStateRepo.ReviewStateUpdates>,
+            ): Promise<void> {
+              const result = await reviewStateRepo.updateReviewState(
+                db,
+                taskId,
+                updates,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            // ─── Review Tracker (M17) ───
+
+            ...(() => {
+              const tracker = createReviewTrackerActivities({
+                credentialBroker: deps.credentialBroker,
+              });
+              return {
+                async reconcilePRState(
+                  config: ReconcilerConfig,
+                ): Promise<ReconcileResult> {
+                  const result = await tracker.reconcilePRState(config);
+                  if (result.isErr()) throw toApplicationFailure(result.error);
+                  return result.value;
+                },
+              };
+            })(),
           };
         })()
       : {}),

@@ -694,7 +694,45 @@ export interface ReviewStateData {
   readonly mergeQueueStatus: string | null;
 }
 
+export interface UpdateReviewStateData {
+  readonly unresolvedThreads?: number;
+  readonly staleReviews?: boolean;
+  readonly mergeQueueStatus?: string;
+  readonly lastGithubSync?: string;
+  readonly headSha?: string;
+}
+
 export interface ReviewStateActivities {
   createReviewState(input: CreateReviewStateData): Promise<void>;
   getReviewState(taskId: string): Promise<ReviewStateData | null>;
+  updateReviewState(
+    taskId: string,
+    updates: UpdateReviewStateData,
+  ): Promise<void>;
+}
+
+// ─── Review Tracker Activities (M17) ───
+
+export interface ReconcilerConfigData {
+  readonly owner: string;
+  readonly repo: string;
+  readonly prNumber: number;
+}
+
+export interface ReconcileCheckData {
+  readonly name: string;
+  readonly conclusion: string;
+}
+
+export interface ReconcileResultData {
+  readonly prState: "open" | "closed" | "merged";
+  readonly reviewDecision: string;
+  readonly unresolvedThreads: number;
+  readonly checks: readonly ReconcileCheckData[];
+  readonly staleReviews: boolean;
+  readonly headSha: string;
+}
+
+export interface ReviewTrackerActivities {
+  reconcilePRState(config: ReconcilerConfigData): Promise<ReconcileResultData>;
 }

@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { Webhooks } from "@octokit/webhooks";
 import { webhookRepo } from "@software-factory/db";
+import type { Client } from "@temporalio/client";
 import type { FastifyInstance } from "fastify";
+import { dispatchWebhookToWorkflow } from "../webhooks/dispatcher.js";
 
 export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   // Capture raw body for webhook signature verification.
@@ -110,7 +112,42 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
         "Webhook received",
       );
 
-      // Mark as processed (actual Temporal dispatch in M17)
+      // Dispatch to Temporal workflow (if a running workflow exists for this PR)
+      const temporalClient = (
+        app as FastifyInstance & { temporalClient?: Client }
+      ).temporalClient;
+      if (temporalClient && event) {
+        try {
+          const dispatch = await dispatchWebhookToWorkflow(
+            temporalClient,
+            app.db,
+            event,
+            action,
+            body,
+          );
+          if (dispatch.dispatched) {
+            request.log.info(
+              {
+                deliveryId,
+                workflowId: dispatch.workflowId,
+                signalName: dispatch.signalName,
+              },
+              "Webhook dispatched to workflow",
+            );
+          }
+        } catch (e) {
+          // Dispatch failure should not fail the webhook response
+          request.log.error(
+            {
+              deliveryId,
+              error: e instanceof Error ? e.message : String(e),
+            },
+            "Webhook dispatch failed",
+          );
+        }
+      }
+
+      // Mark as processed
       await webhookRepo.markDeliveryProcessed(app.db, deliveryId);
 
       reply.status(200).send({ status: "processed" });

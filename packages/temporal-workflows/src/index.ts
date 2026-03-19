@@ -45,6 +45,8 @@ export { prTrackingPhase } from "./phases/pr-tracking.js";
 export type {
   PrTrackingInput,
   PrTrackingResult,
+  PrTrackingOutcome,
+  PRStateSnapshot,
 } from "./phases/pr-tracking.js";
 
 export { learnPhase } from "./phases/learn.js";
@@ -115,4 +117,9 @@ export type {
   EvidenceCapabilityData,
   EvidenceLocatorData,
   RiskCategorizationData,
+  ReviewTrackerActivities,
+  ReconcilerConfigData,
+  ReconcileResultData,
+  ReconcileCheckData,
+  UpdateReviewStateData,
 } from "./activity-types.js";

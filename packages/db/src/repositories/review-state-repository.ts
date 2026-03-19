@@ -113,3 +113,28 @@ export async function getReviewState(
     );
   }
 }
+
+export async function getReviewStateByPrNumber(
+  db: DbInstance,
+  prNumber: number,
+  repoFullName: string,
+): Promise<FactoryResult<ReviewState | null>> {
+  try {
+    const row = await db.query.reviewStates.findFirst({
+      where: eq(reviewStates.prNumber, prNumber),
+    });
+    if (!row) return ok(null);
+    // Verify the PR URL contains the repo full name to scope to correct repo
+    if (row.prUrl && !row.prUrl.includes(repoFullName)) {
+      return ok(null);
+    }
+    return ok(row);
+  } catch (e) {
+    return err(
+      createFactoryError(
+        "unknown_internal",
+        `Failed to get review state by PR number: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+  }
+}

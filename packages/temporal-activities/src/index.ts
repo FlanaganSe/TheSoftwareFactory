@@ -84,6 +84,13 @@ export type {
   AutoMergeActivityDeps,
   MergeMethod,
 } from "./github/auto-merge.js";
+export { createReviewTrackerActivities } from "./github/review-tracker.js";
+export type {
+  ReconcilerConfig,
+  ReconcileCheck,
+  ReconcileResult,
+  ReviewTrackerDeps,
+} from "./github/review-tracker.js";
 
 // === Safety Primitives ===
 export {
