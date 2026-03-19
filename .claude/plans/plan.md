@@ -253,7 +253,14 @@ software-factory/
   - [x] Step 3 — Verify all quality checks pass → verify: `pnpm lint && pnpm test && pnpm -r exec -- node -e "console.log('ok')"`
   - [x] Step 4 — Verify constraints: no @types/node in temporal-workflows, no Node.js imports in core → verify: manual check
   Commit: "feat: initialize pnpm monorepo with 7 packages, TypeScript strict, Biome, and Vitest"
-- [ ] **M2: Core Domain Package** — Define all domain types, Zod schemas, state machine, error types, and configuration
+- [x] **M2: Core Domain Package** — Define all domain types, Zod schemas, state machine, error types, and configuration
+  - [x] Step 1 — Install picomatch + @types/picomatch in packages/core → verify: `pnpm install`
+  - [x] Step 2 — Create 12 schema files in packages/core/src/schemas/ (task, evidence, policy, autonomy, audit, auth, repo, sandbox, github, llm, cost, config) → verify: `pnpm typecheck`
+  - [x] Step 3 — Create state-machine.ts, trusted-context.ts, errors/, policy/decision-service.ts → verify: `pnpm typecheck`
+  - [x] Step 4 — Create barrel index.ts with all re-exports → verify: `pnpm typecheck`
+  - [x] Step 5 — Write 4 test files (state-machine, schemas, policy-decision-service, errors) with 141 tests → verify: `pnpm test`
+  - [x] Step 6 — Verify all quality checks: typecheck, lint, test, no Node.js imports → verify: `pnpm typecheck && pnpm lint && pnpm test`
+  Commit: "feat: add core domain package with Zod schemas, state machine, policy engine, and error types"
 - [ ] **M3: Docker Compose Infrastructure** — Stand up PostgreSQL, Redis, Temporal, MinIO with health checks
 - [ ] **M4: Database Schema + Migrations** — Create all Drizzle schemas, triggers, RLS policies, seed data, and repository layer
 
