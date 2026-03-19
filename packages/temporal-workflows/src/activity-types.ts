@@ -486,3 +486,215 @@ export interface EvidenceActivities {
     input: EvidenceGenerateInput,
   ): Promise<EvidenceGenerateResult>;
 }
+
+// ─── PR Activities ───
+
+export interface CreatePRConfigData {
+  readonly owner: string;
+  readonly repo: string;
+  readonly candidateBranch: string;
+  readonly baseBranch: string;
+  readonly taskId: string;
+  readonly objective: string;
+  readonly evidenceLocator: EvidenceLocatorData;
+  readonly riskSummary: RiskCategorizationData;
+  readonly validationPassed: boolean;
+  readonly headSha: string;
+  readonly capabilitySnapshot: CapabilitySnapshot;
+  readonly attemptNumber: number;
+  readonly validationResult: ValidationSummaryForPRData;
+  readonly protectedSurfaceEdits?: readonly string[];
+  readonly validatorControlFileEdits?: readonly ValidatorControlFileEditForPRData[];
+  readonly changedFiles?: readonly ChangedFileForPRData[];
+  readonly ownersImpacted?: readonly string[];
+}
+
+export interface ValidationSummaryForPRData {
+  readonly testResults: {
+    readonly passed: number;
+    readonly failed: number;
+    readonly skipped: number;
+  };
+  readonly lintResults: {
+    readonly errorCount: number;
+    readonly warningCount: number;
+    readonly details?: readonly {
+      readonly file: string;
+      readonly line: number;
+      readonly rule: string;
+      readonly severity: "error" | "warning";
+      readonly message: string;
+    }[];
+  };
+  readonly securityScanResults: {
+    readonly criticalCount: number;
+    readonly highCount: number;
+    readonly vulnerabilities: readonly {
+      readonly severity: string;
+      readonly description: string;
+      readonly file?: string;
+      readonly line?: number;
+      readonly id: string;
+    }[];
+  };
+  readonly blastRadius: {
+    readonly files: number;
+    readonly packages: number;
+  };
+  readonly revertabilityClass: string;
+}
+
+export interface ValidatorControlFileEditForPRData {
+  readonly path: string;
+  readonly category: string;
+}
+
+export interface ChangedFileForPRData {
+  readonly path: string;
+  readonly riskLevel?: string;
+}
+
+export interface PRResultData {
+  readonly prNumber: number;
+  readonly prUrl: string;
+  readonly prNodeId: string;
+  readonly headSha: string;
+}
+
+export interface PRUpdatesData {
+  readonly title?: string;
+  readonly body?: string;
+}
+
+export interface PRActivities {
+  createPullRequest(
+    config: CreatePRConfigData,
+    apiUrl: string,
+  ): Promise<PRResultData>;
+  updatePullRequest(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    updates: PRUpdatesData,
+  ): Promise<void>;
+}
+
+// ─── Check Run Activities ───
+
+export interface CheckRunConfigData {
+  readonly owner: string;
+  readonly repo: string;
+  readonly headSha: string;
+  readonly taskId: string;
+  readonly validationPassed: boolean;
+  readonly testResults: {
+    readonly passed: number;
+    readonly failed: number;
+    readonly skipped: number;
+  };
+  readonly lintResults: {
+    readonly errorCount: number;
+    readonly warningCount: number;
+    readonly details?: readonly {
+      readonly file: string;
+      readonly line: number;
+      readonly rule: string;
+      readonly severity: "error" | "warning";
+      readonly message: string;
+    }[];
+  };
+  readonly securityScanResults: {
+    readonly criticalCount: number;
+    readonly highCount: number;
+    readonly vulnerabilities: readonly {
+      readonly severity: string;
+      readonly description: string;
+      readonly file?: string;
+      readonly line?: number;
+      readonly id: string;
+    }[];
+  };
+  readonly blastRadius: {
+    readonly files: number;
+    readonly packages: number;
+  };
+  readonly protectedEdits: readonly {
+    readonly filePath: string;
+    readonly protectionClass: string;
+  }[];
+  readonly sarifOutput?: string;
+  readonly evidenceUrl?: string;
+}
+
+export interface CheckRunResultData {
+  readonly checkRunId: number;
+  readonly checkRunUrl: string;
+}
+
+export interface CheckRunUpdatesData {
+  readonly conclusion?: "success" | "failure" | "neutral";
+  readonly output?: {
+    readonly title: string;
+    readonly summary: string;
+  };
+}
+
+export interface CheckRunActivities {
+  createFactoryCheckRun(
+    config: CheckRunConfigData,
+  ): Promise<CheckRunResultData>;
+  updateCheckRun(
+    owner: string,
+    repo: string,
+    checkRunId: number,
+    updates: CheckRunUpdatesData,
+  ): Promise<void>;
+  uploadSarif(
+    owner: string,
+    repo: string,
+    commitSha: string,
+    sarifContent: string,
+  ): Promise<void>;
+}
+
+// ─── Auto-Merge Activities ───
+
+export interface AutoMergeActivities {
+  enableAutoMerge(
+    owner: string,
+    repo: string,
+    prNodeId: string,
+    mergeMethod: string,
+  ): Promise<void>;
+  enqueuePullRequest(
+    owner: string,
+    repo: string,
+    prNodeId: string,
+  ): Promise<void>;
+}
+
+// ─── Review State Activities ───
+
+export interface CreateReviewStateData {
+  readonly taskId: string;
+  readonly evidenceBundleId: string;
+  readonly prNumber: number;
+  readonly prUrl: string;
+  readonly prNodeId: string;
+  readonly headSha: string;
+}
+
+export interface ReviewStateData {
+  readonly id: string;
+  readonly taskId: string;
+  readonly prNumber: number | null;
+  readonly prUrl: string | null;
+  readonly prNodeId: string | null;
+  readonly headSha: string | null;
+  readonly mergeQueueStatus: string | null;
+}
+
+export interface ReviewStateActivities {
+  createReviewState(input: CreateReviewStateData): Promise<void>;
+  getReviewState(taskId: string): Promise<ReviewStateData | null>;
+}

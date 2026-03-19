@@ -15,6 +15,7 @@ export * as sideEffectRepo from "./repositories/side-effect-repository.js";
 export * as apiKeyRepo from "./repositories/api-key-repository.js";
 export * as indexRepo from "./repositories/index-repository.js";
 export * as evidenceRepo from "./repositories/evidence-repository.js";
+export * as reviewStateRepo from "./repositories/review-state-repository.js";
 
 // Encryption
 export type { EncryptedPayload } from "./encryption/envelope.js";

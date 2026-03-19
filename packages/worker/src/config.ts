@@ -12,6 +12,7 @@ export interface WorkerConfig {
   readonly minioAccessKey?: string;
   readonly minioSecretKey?: string;
   readonly minioBucket?: string;
+  readonly apiUrl?: string;
 }
 
 export function loadWorkerConfig(): WorkerConfig {
@@ -41,5 +42,6 @@ export function loadWorkerConfig(): WorkerConfig {
     minioAccessKey: process.env.MINIO_ROOT_USER ?? "factory",
     minioSecretKey: process.env.MINIO_ROOT_PASSWORD,
     minioBucket: process.env.MINIO_BUCKET ?? "factory-artifacts",
+    apiUrl: process.env.API_URL ?? "http://localhost:3000",
   };
 }

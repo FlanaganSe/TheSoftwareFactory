@@ -352,7 +352,7 @@ software-factory/
   - [x] Step 4 — Write unit tests (parsers, blast radius, boundary) + workflow tests + schema tests → verify: `pnpm test`
   - [x] Step 5 — Final verification: lint, typecheck, full test suite → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add validation pipeline with trusted validator boundary, test/lint/security runners, and blast radius analysis"
-- [ ] **M14: Evidence Generation** — Evidence packet schema, annotated diffs, risk summary, artifact storage in MinIO
+- [x] **M14: Evidence Generation** — Evidence packet schema, annotated diffs, risk summary, artifact storage in MinIO
 - [x] **M15: Human Review Flow** — CLI `evidence` / `approve` / `reject` / `changes` commands, review state management
   - [x] Step 1 — Install CLI deps (commander, chalk, ora, @inquirer/prompts, @iarna/toml) + CLI config + API client → verify: `pnpm install && pnpm typecheck --filter @software-factory/cli`
   - [x] Step 2 — API signal endpoints (approve/reject/changes/kill/evidence/freshness) + Temporal client augmentation → verify: `pnpm typecheck --filter @software-factory/api`
@@ -366,7 +366,13 @@ software-factory/
 > **Goal:** Create PRs from candidate branches, submit check runs, track external CI, handle merge queue, and execute merges.
 > **Human review gate:** Verify PRs are created correctly with evidence. Verify merge safety checks. Test on repos with branch protection and merge queues.
 
-- [ ] **M16: PR Creation + Check Runs** — Create PR from candidate branch, submit factory check run, handle check requirements
+- [x] **M16: PR Creation + Check Runs** — Create PR from candidate branch, submit factory check run, handle check requirements
+  - [x] Step 1 — Create activity modules: `pr.ts` (PR creation + body generation), `check-run.ts` (check run + annotations), `auto-merge.ts` (GraphQL merge queue/auto-merge), review-state-repository.ts → verify: `pnpm typecheck`
+  - [x] Step 2 — Update activity-types.ts with PR/CheckRun/AutoMerge/ReviewState interfaces, register in worker, export from index.ts → verify: `pnpm typecheck`
+  - [x] Step 3 — Replace pr-creation.ts workflow stub with real implementation (patched), update orchestrator → verify: `pnpm typecheck`
+  - [x] Step 4 — Write tests: pr.test.ts (14), check-run.test.ts (22), auto-merge.test.ts (6), review-state-repository.test.ts (6), pr-creation-phase.test.ts (7) → verify: `pnpm test`
+  - [x] Step 5 — Final verification: lint, typecheck, full test suite → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
+  Commit: "feat: add PR creation with check runs, auto-merge, and evidence-linked PR body"
 - [ ] **M17: PR Tracking + Feedback Loop** — Webhook-driven PR lifecycle, review feedback → re-implementation cycle, stale review detection
 - [ ] **M18: Merge Readiness + Execution** — Merge queue enqueue, merge execution with SHA safety, post-merge learning phase
 

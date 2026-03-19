@@ -573,11 +573,125 @@ export async function taskOrchestrator(
         break;
       }
     } else if (phase === "pr_creation") {
-      await executeChild("prCreationPhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId }],
-      });
-      currentState = "pr_created";
+      if (patched("m16-real-pr-creation")) {
+        const defaultContext: TrustedBaseContext = trustedContext ?? {
+          baseSha: "HEAD",
+          setupContract: null,
+          policySnapshot: [],
+          behavioralControlFiles: {},
+          validationCommandSources: [],
+          capturedAt: new Date().toISOString(),
+        };
+
+        const vr = validateResult?.validationResult;
+        const validationData = {
+          testResults: vr?.testResults ?? { passed: 0, failed: 0, skipped: 0 },
+          lintResults: vr?.lintResults ?? { errorCount: 0, warningCount: 0 },
+          securityScanResults: {
+            vulnerabilities: [] as {
+              severity: string;
+              description: string;
+              file?: string;
+              line?: number;
+              id: string;
+            }[],
+            criticalCount: vr?.criticalVulnerabilities ?? 0,
+            highCount: 0,
+          },
+          blastRadius: vr?.blastRadius ?? { files: 0, packages: 0 },
+          revertabilityClass: vr?.revertabilityClass ?? "clean_revert",
+        };
+
+        const prResult = await executeChild("prCreationPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              owner: input.repoOwner,
+              repo: input.repoName,
+              candidateBranch: `factory/${input.taskId}`,
+              baseBranch:
+                defaultContext.baseSha === "HEAD"
+                  ? "main"
+                  : (capabilitySnapshot?.defaultBranch ?? "main"),
+              objective: input.objective,
+              headSha: implementResult?.headSha ?? defaultContext.baseSha,
+              attemptNumber,
+              evidenceLocator: evidenceLocator ?? {
+                taskId: input.taskId,
+                attemptNumber,
+                bundleId: "",
+                artifactPrefix: "",
+                evidenceJsonKey: "",
+                manifestKey: "",
+                diffPatchKey: "",
+                createdAt: new Date().toISOString(),
+              },
+              riskSummary: {
+                hardBlockers: [],
+                softConcerns: [],
+                humanJudgmentRequired: [],
+                informational: [],
+              },
+              validationPassed:
+                validateResult?.validationResult?.passed ?? false,
+              validationResult: validationData,
+              capabilitySnapshot: capabilitySnapshot ?? {
+                repoId: input.repoId,
+                capturedAt: new Date().toISOString(),
+                sourceRevision: "HEAD",
+                defaultBranch: "main",
+                visibility: "private" as const,
+                isArchived: false,
+                isFork: false,
+                hasWiki: false,
+                hasProjects: false,
+                branchProtection: null,
+                rulesets: [],
+                hasInheritedRulesets: false,
+                codeowners: null,
+                mergeQueue: null,
+                allowedMergeStrategies: ["squash" as const],
+                requiredStatusChecks: [],
+                requiredWorkflows: [],
+                requiresSignedCommits: false,
+                requiresLinearHistory: false,
+                requiresConversationResolution: false,
+                dismissesStaleReviews: false,
+                requiredReviewCount: 0,
+                requiresCodeOwnerReview: false,
+                lastPusherCannotApprove: false,
+                hasPullRequestTargetWorkflows: false,
+                pullRequestTargetWorkflowPaths: [],
+                pushRestrictions: null,
+                bypassActors: [],
+                environments: [],
+                repoClass: "C" as const,
+                supportedByFactory: true,
+                unsupportedReasons: [],
+                warnings: [],
+              },
+              evidenceBundleId: evidenceLocator?.bundleId,
+              protectedSurfaceEdits: vr?.protectedSurfaceEdits,
+              changedFiles: implementResult?.agentResult?.filesModified?.map(
+                (f: string) => ({ path: f }),
+              ),
+              ownersImpacted: capabilitySnapshot?.codeowners?.entries?.map(
+                (e) => e.owners.join(", "),
+              ),
+            },
+          ],
+        });
+        currentState = "pr_created";
+        void prResult;
+      } else {
+        await executeChild("prCreationPhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId }],
+        });
+        currentState = "pr_created";
+      }
     } else if (phase === "pr_tracking") {
       await executeChild("prTrackingPhase", {
         workflowId: childId,

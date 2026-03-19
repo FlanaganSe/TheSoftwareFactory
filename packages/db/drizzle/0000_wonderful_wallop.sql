@@ -84,6 +84,8 @@ CREATE TABLE "review_states" (
 	"internal_approved_at" timestamp with time zone,
 	"pr_number" integer,
 	"pr_url" text,
+	"pr_node_id" text,
+	"head_sha" text,
 	"required_checks" jsonb,
 	"codeowners_status" jsonb,
 	"unresolved_threads" integer DEFAULT 0,

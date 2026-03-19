@@ -43,6 +43,48 @@ export {
 } from "./github/workflow-scanner.js";
 export type { WorkflowScanResult } from "./github/workflow-scanner.js";
 
+export {
+  createPRActivities,
+  generatePRBody,
+  buildPRTitle,
+  computePRIdempotencyKey,
+} from "./github/pr.js";
+export type {
+  CreatePRConfig,
+  PRResult,
+  PRUpdates,
+  PRActivityDeps,
+  SideEffectOps,
+  SideEffectRecord,
+  ValidationSummaryForPR,
+  ValidatorControlFileEditForPR,
+  ChangedFileForPR,
+} from "./github/pr.js";
+
+export {
+  createCheckRunActivities,
+  computeConclusion,
+  generateCheckRunSummary,
+  buildAnnotations,
+  computeCheckRunIdempotencyKey,
+} from "./github/check-run.js";
+export type {
+  CheckRunConfig,
+  CheckRunResult,
+  CheckRunUpdates,
+  CheckRunActivityDeps,
+  CheckRunAnnotation,
+  LintAnnotationSource,
+  SecurityAnnotationSource,
+  ProtectedEditSource,
+} from "./github/check-run.js";
+
+export { createAutoMergeActivities } from "./github/auto-merge.js";
+export type {
+  AutoMergeActivityDeps,
+  MergeMethod,
+} from "./github/auto-merge.js";
+
 // === Safety Primitives ===
 export {
   createRedisClient,

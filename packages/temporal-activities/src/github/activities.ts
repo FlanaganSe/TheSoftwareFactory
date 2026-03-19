@@ -1,7 +1,8 @@
 /**
  * GitHub activities wrapper for Temporal.
- * Combines capability scan, branch operations, and trusted context capture
- * into a single activity set with ApplicationFailure error handling.
+ * Combines capability scan, branch operations, trusted context capture,
+ * PR creation, check runs, and auto-merge into a single activity set
+ * with ApplicationFailure error handling.
  */
 
 import type {
@@ -9,12 +10,28 @@ import type {
   FactoryError,
   TrustedBaseContext,
 } from "@software-factory/core";
+import {
+  type DbInstance,
+  reviewStateRepo,
+  sideEffectRepo,
+} from "@software-factory/db";
 import { ApplicationFailure } from "@temporalio/activity";
+import type { MergeMethod } from "./auto-merge.js";
+import { createAutoMergeActivities } from "./auto-merge.js";
 import type { BranchActivityDeps, FileChange } from "./branch.js";
 import { createBranchActivities } from "./branch.js";
 import type { ScanLogger } from "./capability-scan.js";
 import { scanRepository } from "./capability-scan.js";
+import type {
+  CheckRunConfig,
+  CheckRunResult,
+  CheckRunUpdates,
+} from "./check-run.js";
+import { createCheckRunActivities } from "./check-run.js";
 import type { CredentialBroker } from "./credential-broker.js";
+import type { CreatePRConfig, PRResult, PRUpdates } from "./pr.js";
+import { createPRActivities } from "./pr.js";
+import type { SideEffectOps } from "./pr.js";
 import type { MutationSerializer } from "./rate-limiter.js";
 import { createTrustedContextActivities } from "./trusted-context.js";
 
@@ -23,6 +40,8 @@ export interface GitHubActivityDeps {
   readonly serializer: MutationSerializer;
   readonly installationId: number;
   readonly logger?: ScanLogger;
+  readonly db?: DbInstance;
+  readonly apiUrl?: string;
 }
 
 function toApplicationFailure(error: FactoryError): ApplicationFailure {
@@ -116,5 +135,179 @@ export function createGitHubActivities(deps: GitHubActivityDeps) {
       if (result.isErr()) throw toApplicationFailure(result.error);
       return result.value;
     },
+
+    // ─── PR Activities (M16) ───
+
+    ...(deps.db
+      ? (() => {
+          const db = deps.db;
+          const apiUrl = deps.apiUrl ?? "http://localhost:3000";
+
+          const sideEffects: SideEffectOps = {
+            async getSideEffect(idempotencyKey) {
+              return sideEffectRepo.getSideEffect(db, idempotencyKey);
+            },
+            async recordSideEffect(
+              taskId,
+              effectType,
+              idempotencyKey,
+              requestHash,
+            ) {
+              return sideEffectRepo.recordSideEffect(
+                db,
+                taskId,
+                effectType,
+                idempotencyKey,
+                requestHash,
+              );
+            },
+            async completeSideEffect(idempotencyKey, responsePayload) {
+              return sideEffectRepo.completeSideEffect(
+                db,
+                idempotencyKey,
+                responsePayload,
+              );
+            },
+            async failSideEffect(idempotencyKey, errorMessage) {
+              return sideEffectRepo.failSideEffect(
+                db,
+                idempotencyKey,
+                errorMessage,
+              );
+            },
+          };
+
+          const prActivities = createPRActivities({
+            credentialBroker: deps.credentialBroker,
+            serializer: deps.serializer,
+            sideEffects,
+          });
+
+          const checkRunActivities = createCheckRunActivities({
+            credentialBroker: deps.credentialBroker,
+            serializer: deps.serializer,
+            sideEffects,
+          });
+
+          const autoMergeActivities = createAutoMergeActivities({
+            credentialBroker: deps.credentialBroker,
+            serializer: deps.serializer,
+          });
+
+          return {
+            async createPullRequest(config: CreatePRConfig): Promise<PRResult> {
+              const result = await prActivities.createPullRequest(
+                config,
+                apiUrl,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+              return result.value;
+            },
+
+            async updatePullRequest(
+              owner: string,
+              repo: string,
+              prNumber: number,
+              updates: PRUpdates,
+            ): Promise<void> {
+              const result = await prActivities.updatePullRequest(
+                owner,
+                repo,
+                prNumber,
+                updates,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            async createFactoryCheckRun(
+              config: CheckRunConfig,
+            ): Promise<CheckRunResult> {
+              const result =
+                await checkRunActivities.createFactoryCheckRun(config);
+              if (result.isErr()) throw toApplicationFailure(result.error);
+              return result.value;
+            },
+
+            async updateCheckRun(
+              owner: string,
+              repo: string,
+              checkRunId: number,
+              updates: CheckRunUpdates,
+            ): Promise<void> {
+              const result = await checkRunActivities.updateCheckRun(
+                owner,
+                repo,
+                checkRunId,
+                updates,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            async uploadSarif(
+              owner: string,
+              repo: string,
+              commitSha: string,
+              sarifContent: string,
+            ): Promise<void> {
+              const result = await checkRunActivities.uploadSarif(
+                owner,
+                repo,
+                commitSha,
+                sarifContent,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            async enableAutoMerge(
+              owner: string,
+              repo: string,
+              prNodeId: string,
+              mergeMethod: MergeMethod,
+            ): Promise<void> {
+              const result = await autoMergeActivities.enableAutoMerge(
+                owner,
+                repo,
+                prNodeId,
+                mergeMethod,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            async enqueuePullRequest(
+              owner: string,
+              repo: string,
+              prNodeId: string,
+            ): Promise<void> {
+              const result = await autoMergeActivities.enqueuePullRequest(
+                owner,
+                repo,
+                prNodeId,
+              );
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            async createReviewState(
+              input: reviewStateRepo.CreateReviewStateInput,
+            ): Promise<void> {
+              const result = await reviewStateRepo.createReviewState(db, input);
+              if (result.isErr()) throw toApplicationFailure(result.error);
+            },
+
+            async getReviewState(taskId: string): Promise<{
+              id: string;
+              taskId: string;
+              prNumber: number | null;
+              prUrl: string | null;
+              prNodeId: string | null;
+              headSha: string | null;
+              mergeQueueStatus: string | null;
+            } | null> {
+              const result = await reviewStateRepo.getReviewState(db, taskId);
+              if (result.isErr()) throw toApplicationFailure(result.error);
+              return result.value;
+            },
+          };
+        })()
+      : {}),
   };
 }

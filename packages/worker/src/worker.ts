@@ -56,6 +56,8 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
         ),
         serializer: new MutationSerializer(),
         installationId: config.githubInstallationId ?? 0,
+        db,
+        apiUrl: config.apiUrl,
       })
     : {};
 

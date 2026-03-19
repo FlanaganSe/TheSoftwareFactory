@@ -233,6 +233,24 @@ const mockActivities = {
     },
     passed: true,
   }),
+  // PR activities (M16)
+  createPullRequest: async () => ({
+    prNumber: 42,
+    prUrl: "https://github.com/test-org/test-repo/pull/42",
+    prNodeId: "PR_node_42",
+    headSha: "abc123",
+  }),
+  updatePullRequest: async () => {},
+  createFactoryCheckRun: async () => ({
+    checkRunId: 100,
+    checkRunUrl: "https://github.com/test-org/test-repo/runs/100",
+  }),
+  updateCheckRun: async () => {},
+  uploadSarif: async () => {},
+  enableAutoMerge: async () => {},
+  enqueuePullRequest: async () => {},
+  createReviewState: async () => {},
+  getReviewState: async () => null,
 };
 
 /** Create input with unique taskId to prevent child workflow ID collisions. */

@@ -27,6 +27,8 @@ export const reviewStates = pgTable("review_states", {
   // External boundary
   prNumber: integer("pr_number"),
   prUrl: text("pr_url"),
+  prNodeId: text("pr_node_id"),
+  headSha: text("head_sha"),
   requiredChecks: jsonb("required_checks"),
   codeownersStatus: jsonb("codeowners_status"),
   unresolvedThreads: integer("unresolved_threads").default(0),
