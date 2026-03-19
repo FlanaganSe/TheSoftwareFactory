@@ -736,3 +736,80 @@ export interface ReconcileResultData {
 export interface ReviewTrackerActivities {
   reconcilePRState(config: ReconcilerConfigData): Promise<ReconcileResultData>;
 }
+
+// ─── Merge Activities (M18) ───
+
+export interface MergePrecheckConfigData {
+  readonly owner: string;
+  readonly repo: string;
+  readonly prNumber: number;
+  readonly expectedHeadSha: string;
+  readonly requiredChecks: readonly string[];
+  readonly requiredReviewCount: number;
+}
+
+export interface MergePrecheckData {
+  readonly ready: boolean;
+  readonly blockers: readonly string[];
+  readonly checksStatus: "all_passing" | "some_failing" | "pending";
+  readonly reviewStatus: "approved" | "changes_requested" | "pending";
+  readonly threadsStatus: "all_resolved" | "unresolved";
+  readonly codeOwnerStatus: "approved" | "pending" | "not_required";
+}
+
+export interface MergeConfigData {
+  readonly owner: string;
+  readonly repo: string;
+  readonly prNumber: number;
+  readonly prNodeId: string;
+  readonly expectedHeadSha: string;
+  readonly mergeMethod: "merge" | "squash" | "rebase";
+  readonly commitTitle?: string;
+  readonly commitMessage?: string;
+  readonly useMergeQueue: boolean;
+  readonly taskId: string;
+}
+
+export interface MergeResultData {
+  readonly merged: boolean;
+  readonly sha?: string;
+  readonly method: string;
+  readonly mergeQueuePosition?: number;
+  readonly message: string;
+}
+
+export interface PostMergeCleanupConfigData {
+  readonly owner: string;
+  readonly repo: string;
+  readonly taskId: string;
+  readonly candidateBranch: string;
+  readonly containerId?: string;
+}
+
+export interface MergeActivities {
+  checkMergeReadiness(
+    config: MergePrecheckConfigData,
+  ): Promise<MergePrecheckData>;
+  mergePullRequest(config: MergeConfigData): Promise<MergeResultData>;
+  deleteBranch(owner: string, repo: string, branch: string): Promise<void>;
+}
+
+// ─── Learn Activities (M18) ───
+
+export interface TaskMetricsData {
+  readonly taskId: string;
+  readonly merged: boolean;
+  readonly attemptCount: number;
+  readonly phaseIterations: number;
+  readonly totalCostCents: number;
+  readonly durationMs: number;
+  readonly timeToFirstEvidence: number;
+  readonly timeToMerge: number;
+  readonly filesChanged: number;
+  readonly linesAdded: number;
+  readonly linesRemoved: number;
+}
+
+export interface LearnActivities {
+  recordTaskMetrics(taskId: string, metrics: TaskMetricsData): Promise<void>;
+}

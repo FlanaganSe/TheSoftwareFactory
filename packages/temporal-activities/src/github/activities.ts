@@ -29,6 +29,13 @@ import type {
 } from "./check-run.js";
 import { createCheckRunActivities } from "./check-run.js";
 import type { CredentialBroker } from "./credential-broker.js";
+import type {
+  MergeConfig,
+  MergePrecheck,
+  MergePrecheckConfig,
+  MergeResult,
+} from "./merge.js";
+import { createMergeActivities } from "./merge.js";
 import type { CreatePRConfig, PRResult, PRUpdates } from "./pr.js";
 import { createPRActivities } from "./pr.js";
 import type { SideEffectOps } from "./pr.js";
@@ -320,6 +327,46 @@ export function createGitHubActivities(deps: GitHubActivityDeps) {
               );
               if (result.isErr()) throw toApplicationFailure(result.error);
             },
+
+            // ─── Merge Activities (M18) ───
+
+            ...(() => {
+              const mergeActs = createMergeActivities({
+                credentialBroker: deps.credentialBroker,
+                serializer: deps.serializer,
+                sideEffects,
+              });
+              return {
+                async checkMergeReadiness(
+                  config: MergePrecheckConfig,
+                ): Promise<MergePrecheck> {
+                  const result = await mergeActs.checkMergeReadiness(config);
+                  if (result.isErr()) throw toApplicationFailure(result.error);
+                  return result.value;
+                },
+
+                async mergePullRequest(
+                  config: MergeConfig,
+                ): Promise<MergeResult> {
+                  const result = await mergeActs.mergePullRequest(config);
+                  if (result.isErr()) throw toApplicationFailure(result.error);
+                  return result.value;
+                },
+
+                async deleteBranch(
+                  owner: string,
+                  repo: string,
+                  branch: string,
+                ): Promise<void> {
+                  const result = await mergeActs.deleteBranch(
+                    owner,
+                    repo,
+                    branch,
+                  );
+                  if (result.isErr()) throw toApplicationFailure(result.error);
+                },
+              };
+            })(),
 
             // ─── Review Tracker (M17) ───
 

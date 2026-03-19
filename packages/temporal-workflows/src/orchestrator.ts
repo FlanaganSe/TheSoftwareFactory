@@ -16,12 +16,20 @@ import {
   continueAsNew,
   executeChild,
   patched,
+  proxyActivities,
   setHandler,
   workflowInfo,
 } from "@temporalio/workflow";
 import { Mutex } from "async-mutex";
 
+import type {
+  MergeActivities,
+  SafetyActivities,
+  SandboxActivities,
+  TaskActivities,
+} from "./activity-types.js";
 import type { ImplementResult } from "./phases/implement.js";
+import type { LearnFullResult } from "./phases/learn.js";
 import type { PrCreationFullResult } from "./phases/pr-creation.js";
 import type { PrTrackingResult } from "./phases/pr-tracking.js";
 import type { SetupResult } from "./phases/setup.js";
@@ -90,6 +98,18 @@ const PHASE_ORDER = [
 
 type PhaseName = (typeof PHASE_ORDER)[number];
 
+// ─── Merge method selection ───
+
+function selectMergeMethod(
+  cap: CapabilitySnapshot | undefined,
+): "merge" | "squash" | "rebase" {
+  const allowed = cap?.allowedMergeStrategies ?? ["squash"];
+  if (allowed.includes("squash")) return "squash";
+  if (allowed.includes("merge")) return "merge";
+  if (allowed.includes("rebase")) return "rebase";
+  return "squash"; // fallback
+}
+
 // ─── Orchestrator ───
 
 export async function taskOrchestrator(
@@ -108,6 +128,7 @@ export async function taskOrchestrator(
   let costCents = 0;
   const startedAt = new Date().toISOString();
   let lastActivityAt = startedAt;
+  let mergedSha: string | undefined;
 
   // Inter-phase data (persisted for Continue-As-New)
   let trustedContext: TrustedBaseContext | undefined = input.trustedContext;
@@ -775,7 +796,90 @@ export async function taskOrchestrator(
 
         if (trackingResult.outcome === "merge_ready") {
           currentState = "merge_ready";
-          // Continue to learn phase (M18 will add merge execution)
+
+          if (patched("m18-merge-execution")) {
+            // ─── MERGE EXECUTION ───
+            const mergeActivities = proxyActivities<MergeActivities>({
+              startToCloseTimeout: "60s",
+              retry: { maximumAttempts: 2 },
+            });
+
+            const taskActivities = proxyActivities<
+              Pick<TaskActivities, "transitionTaskState">
+            >({
+              startToCloseTimeout: "30s",
+              retry: { maximumAttempts: 3 },
+            });
+
+            // Pre-merge safety check
+            const precheck = await mergeActivities.checkMergeReadiness({
+              owner: input.repoOwner,
+              repo: input.repoName,
+              prNumber: prResult?.prNumber ?? 0,
+              expectedHeadSha: implementResult?.headSha ?? "",
+              requiredChecks:
+                capabilitySnapshot?.requiredStatusChecks?.map(
+                  (c) => c.context,
+                ) ?? [],
+              requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
+            });
+
+            if (!precheck.ready) {
+              await taskActivities.transitionTaskState(
+                input.taskId,
+                "failed",
+                "system",
+                { phase: "merge", blockers: precheck.blockers },
+              );
+              currentState = "failed";
+              break;
+            }
+
+            // Execute merge
+            const prNumber = prResult?.prNumber ?? 0;
+            const mergeResult = await mergeActivities.mergePullRequest({
+              owner: input.repoOwner,
+              repo: input.repoName,
+              prNumber,
+              prNodeId: prResult?.prNodeId ?? "",
+              expectedHeadSha: implementResult?.headSha ?? "",
+              mergeMethod: selectMergeMethod(capabilitySnapshot),
+              commitTitle: `factory: ${input.objective.slice(0, 60)} (#${prNumber})`,
+              useMergeQueue: capabilitySnapshot?.mergeQueue?.enabled ?? false,
+              taskId: input.taskId,
+            });
+
+            if (mergeResult.merged) {
+              mergedSha = mergeResult.sha;
+              currentState = "merged";
+            } else if (mergeResult.mergeQueuePosition != null) {
+              // Enqueued to merge queue — treat as optimistic success
+              currentState = "merged";
+            } else {
+              await taskActivities.transitionTaskState(
+                input.taskId,
+                "failed",
+                "system",
+                { phase: "merge", reason: mergeResult.message },
+              );
+              currentState = "failed";
+              break;
+            }
+
+            // Post-merge cleanup (non-cancellable)
+            await CancellationScope.nonCancellable(async () => {
+              try {
+                await mergeActivities.deleteBranch(
+                  input.repoOwner,
+                  input.repoName,
+                  `factory/${input.taskId}`,
+                );
+              } catch {
+                // best-effort
+              }
+            });
+          }
+          // Continue to learn phase
         } else if (trackingResult.outcome === "changes_requested") {
           // External review feedback → loop back to implement
           addressingFeedback = true;
@@ -806,31 +910,112 @@ export async function taskOrchestrator(
         currentState = "merged";
       }
     } else if (phase === "learn") {
-      await executeChild("learnPhase", {
-        workflowId: childId,
-        args: [{ taskId: input.taskId }],
-      });
+      if (patched("m18-real-learn")) {
+        const learnResult = (await executeChild("learnPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              owner: input.repoOwner,
+              repo: input.repoName,
+              merged: currentState === "merged",
+              mergedSha,
+              attemptNumber,
+              phaseIteration,
+              totalCostCents: costCents,
+              evidenceLocator,
+              startedAt,
+              completedAt: new Date().toISOString(),
+              filesChanged:
+                implementResult?.agentResult?.filesModified?.length ?? 0,
+            },
+          ],
+        })) as LearnFullResult;
+        void learnResult;
+      } else {
+        await executeChild("learnPhase", {
+          workflowId: childId,
+          args: [{ taskId: input.taskId }],
+        });
+      }
     }
   }
 
-  // ─── Cleanup on kill ───
+  // ─── Consolidated cleanup ───
+  // Runs in ALL terminal paths: merged, failed, cancelled
 
   if (killed && killInfo) {
-    await CancellationScope.nonCancellable(async () => {
-      currentState = "cancelled";
+    currentState = "cancelled";
+    void killInfo;
+  }
 
-      // Release branch lease if setup was completed
-      if (setupResult?.branchLease) {
+  if (patched("m18-cleanup-consolidation")) {
+    await CancellationScope.nonCancellable(async () => {
+      const safetyActs = proxyActivities<
+        Pick<SafetyActivities, "releaseBranchLease">
+      >({
+        startToCloseTimeout: "15s",
+        retry: { maximumAttempts: 2 },
+      });
+
+      const sandboxActs = proxyActivities<
+        Pick<SandboxActivities, "destroySandbox">
+      >({
+        startToCloseTimeout: "30s",
+        retry: { maximumAttempts: 2 },
+      });
+
+      const taskActs = proxyActivities<
+        Pick<TaskActivities, "transitionTaskState">
+      >({
+        startToCloseTimeout: "30s",
+        retry: { maximumAttempts: 2 },
+      });
+
+      // Release branch lease
+      const branchName = `factory/${input.taskId}`;
+      try {
+        await safetyActs.releaseBranchLease(branchName, input.taskId);
+      } catch {
+        // best-effort — TTL auto-expires
+      }
+
+      // Destroy sandbox if still alive
+      if (setupResult?.sandboxInstance?.containerId) {
         try {
-          // We can't call activities here during cancellation cleanup
-          // The branch lease TTL will auto-expire
-          void setupResult;
+          await sandboxActs.destroySandbox(
+            setupResult.sandboxInstance.containerId,
+          );
         } catch {
-          // Best-effort cleanup
+          // best-effort
         }
       }
 
-      void killInfo;
+      // Ensure terminal state is persisted
+      if (
+        currentState === "merged" ||
+        currentState === "failed" ||
+        currentState === "cancelled"
+      ) {
+        try {
+          await taskActs.transitionTaskState(
+            input.taskId,
+            currentState,
+            "system",
+            { phase: "cleanup", finalState: currentState },
+          );
+        } catch {
+          // may already be in terminal state
+        }
+      }
+    });
+  } else if (killed) {
+    // Legacy kill cleanup
+    await CancellationScope.nonCancellable(async () => {
+      if (setupResult?.branchLease) {
+        void setupResult;
+      }
     });
   }
 

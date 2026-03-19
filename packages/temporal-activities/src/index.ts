@@ -84,6 +84,18 @@ export type {
   AutoMergeActivityDeps,
   MergeMethod,
 } from "./github/auto-merge.js";
+export {
+  createMergeActivities,
+  computeMergeIdempotencyKey,
+} from "./github/merge.js";
+export type {
+  MergeActivityDeps,
+  MergeConfig,
+  MergeResult,
+  MergePrecheck,
+  MergePrecheckConfig,
+  PostMergeCleanupConfig,
+} from "./github/merge.js";
 export { createReviewTrackerActivities } from "./github/review-tracker.js";
 export type {
   ReconcilerConfig,

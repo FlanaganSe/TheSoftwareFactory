@@ -50,7 +50,12 @@ export type {
 } from "./phases/pr-tracking.js";
 
 export { learnPhase } from "./phases/learn.js";
-export type { LearnInput, LearnResult } from "./phases/learn.js";
+export type {
+  LearnInput,
+  LearnResult,
+  LearnFullInput,
+  LearnFullResult,
+} from "./phases/learn.js";
 
 // Signal/Query definitions — for external consumers
 export {
@@ -122,4 +127,12 @@ export type {
   ReconcileResultData,
   ReconcileCheckData,
   UpdateReviewStateData,
+  MergeActivities,
+  MergePrecheckConfigData,
+  MergePrecheckData,
+  MergeConfigData,
+  MergeResultData,
+  PostMergeCleanupConfigData,
+  LearnActivities,
+  TaskMetricsData,
 } from "./activity-types.js";

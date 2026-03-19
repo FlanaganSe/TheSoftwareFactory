@@ -245,6 +245,22 @@ const mockActivities = {
     staleReviews: false,
     headSha: "abc123",
   }),
+  // Merge activities (M18)
+  checkMergeReadiness: async () => ({
+    ready: true,
+    blockers: [],
+    checksStatus: "all_passing" as const,
+    reviewStatus: "approved" as const,
+    threadsStatus: "all_resolved" as const,
+    codeOwnerStatus: "not_required" as const,
+  }),
+  mergePullRequest: async () => ({
+    merged: true,
+    sha: "merge-sha-123",
+    method: "squash",
+    message: "Merged successfully",
+  }),
+  deleteBranch: async () => {},
 };
 
 function makeInput(
@@ -334,7 +350,8 @@ describe("orchestrator feedback loop (M17)", () => {
 
       await handle.result();
       const state = await handle.query(getStateQuery);
-      expect(state).toBe("merge_ready");
+      // M18: merge execution runs after merge_ready, transitions to merged
+      expect(["merged", "merge_ready"]).toContain(state);
     });
   }, 60_000);
 

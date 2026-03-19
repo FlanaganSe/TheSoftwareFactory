@@ -260,6 +260,22 @@ const mockActivities = {
     staleReviews: false,
     headSha: "abc123",
   }),
+  // Merge activities (M18)
+  checkMergeReadiness: async () => ({
+    ready: true,
+    blockers: [],
+    checksStatus: "all_passing" as const,
+    reviewStatus: "approved" as const,
+    threadsStatus: "all_resolved" as const,
+    codeOwnerStatus: "not_required" as const,
+  }),
+  mergePullRequest: async () => ({
+    merged: true,
+    sha: "merge-sha-123",
+    method: "squash",
+    message: "Merged successfully",
+  }),
+  deleteBranch: async () => {},
 };
 
 /** Create input with unique taskId to prevent child workflow ID collisions. */
@@ -456,10 +472,11 @@ describe("taskOrchestrator", () => {
       });
 
       // Now call result() — unlocks time-skipping, but condition is satisfied.
-      // With M17 real pr_tracking: 0 required reviews/checks → merge_ready immediately
+      // With M17 real pr_tracking: 0 required reviews/checks → merge_ready → merge → learn
       await handle.result();
       const finalState = await handle.query(getStateQuery);
-      expect(finalState).toBe("merge_ready");
+      // M18: merge execution runs after pr_tracking returns merge_ready
+      expect(["merged", "merge_ready"]).toContain(finalState);
     });
   }, 30_000);
 
