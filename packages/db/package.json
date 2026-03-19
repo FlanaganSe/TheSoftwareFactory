@@ -1,0 +1,11 @@
+{
+  "name": "@software-factory/db",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@software-factory/core": "workspace:*"
+  }
+}

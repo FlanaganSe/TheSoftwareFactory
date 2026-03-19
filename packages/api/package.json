@@ -1,0 +1,13 @@
+{
+  "name": "@software-factory/api",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@software-factory/core": "workspace:*",
+    "@software-factory/db": "workspace:*",
+    "@software-factory/temporal-activities": "workspace:*"
+  }
+}

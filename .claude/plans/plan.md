@@ -1,9 +1,9 @@
 # Software Factory Control Plane — Implementation Plan
 
-**Version:** 1.0
+**Version:** 1.2
 **Date:** 2026-03-18
 **PRD Version:** 5.1
-**Status:** Awaiting human review
+**Status:** Ready for implementation — all decisions locked
 
 ---
 
@@ -247,7 +247,12 @@ software-factory/
 > **Goal:** Establish monorepo, types, database, and infrastructure. Every subsequent milestone depends on this phase.
 > **Human review gate:** Review directory structure, type system, and database schema before proceeding.
 
-- [ ] **M1: Monorepo + Build System** — Initialize pnpm workspace with 7 packages, TypeScript config, Biome, and Vitest
+- [x] **M1: Monorepo + Build System** — Initialize pnpm workspace with 7 packages, TypeScript config, Biome, and Vitest
+  - [x] Step 1 — Root config: package.json, pnpm-workspace.yaml, tsconfig.base.json, biome.json, vitest.config.ts, .gitignore → verify: `pnpm install`
+  - [x] Step 2 — Create 7 packages with package.json, tsconfig.json, src/index.ts, vitest.config.ts; wire inter-package deps → verify: `pnpm install && pnpm typecheck`
+  - [x] Step 3 — Verify all quality checks pass → verify: `pnpm lint && pnpm test && pnpm -r exec -- node -e "console.log('ok')"`
+  - [x] Step 4 — Verify constraints: no @types/node in temporal-workflows, no Node.js imports in core → verify: manual check
+  Commit: "feat: initialize pnpm monorepo with 7 packages, TypeScript strict, Biome, and Vitest"
 - [ ] **M2: Core Domain Package** — Define all domain types, Zod schemas, state machine, error types, and configuration
 - [ ] **M3: Docker Compose Infrastructure** — Stand up PostgreSQL, Redis, Temporal, MinIO with health checks
 - [ ] **M4: Database Schema + Migrations** — Create all Drizzle schemas, triggers, RLS policies, seed data, and repository layer
@@ -351,40 +356,50 @@ software-factory/
 **Packages affected:** `packages/core`
 
 **Files to create:**
-- `src/types/task.ts` — `TaskState` enum (14 values), `Task` type, `TaskTransition` map (18 valid transitions)
-- `src/types/evidence.ts` — `EvidenceBundle`, `AnnotatedDiff`, `RiskSummary`, `RevertabilityClass`
+- `src/types/task.ts` — `TaskState` enum (16 values — see below), `Task` type, `TaskTransition` map (22 valid transitions)
+- `src/types/evidence.ts` — `EvidenceBundle` (13 PRD R-008 fields), `AnnotatedDiff`, `RiskSummary`, `RevertabilityClass`
 - `src/types/policy.ts` — `PolicyType`, `ProtectionClass`, `PolicyConfig`, `AutonomyLevel` (L0/L1/L2)
-- `src/types/github.ts` — `CapabilitySnapshot`, `PRState`, `ReviewState`, `WebhookEvent`
+- `src/types/github.ts` — `PRState`, `ReviewState`, `WebhookEvent` (NOT CapabilitySnapshot — that goes in M6)
 - `src/types/sandbox.ts` — `ContainerPhase`, `EnvironmentState`, `SetupContract`
 - `src/types/audit.ts` — `AuditEntry`, `AuditActionType`, `ActorType`
 - `src/types/llm.ts` — `LLMCallAuditEntry`, `AgentTool`, `EditFormat`
 - `src/types/repo.ts` — `Repository`, `RepoClass` (A/B/C), `IndexVersion`
-- `src/schemas/` — Zod schemas matching every type (validation at boundaries)
+- `src/types/auth.ts` — `Role` (admin/operator/viewer), `ApiKeyCredential`, `ActorIdentity`
+- `src/types/trusted-context.ts` — `TrustedBaseContext` (pinned base SHA, parsed control files, setup contract, policy snapshot, validation commands)
+- `src/schemas/` — Zod schemas matching every type (validation at boundaries) — **single source of truth, all types derived via `z.infer<>`**
 - `src/errors/factory-error.ts` — Typed error hierarchy using neverthrow `Result<T, E>`
 - `src/errors/error-codes.ts` — 10-class error taxonomy (policy_denied, github_transient, sandbox_failure, etc.)
-- `src/config/schema.ts` — Zod schema for all config (API keys, DB URLs, feature flags)
-- `src/config/loader.ts` — 5-tier precedence: flags > env > project > user > defaults
+- `src/policy/decision-service.ts` — Centralized `PolicyDecisionService`: pure functions for path-level read/write/deny/flag decisions using picomatch. ALL tool, index, query, and command entry points must route through this.
 - `src/state-machine.ts` — Pure function: `canTransition(from, to): boolean` and `getValidTransitions(from): TaskState[]`
+
+**IMPORTANT: No config loader in this package.** Config loading requires Node.js APIs (`process.env`, `fs`, XDG paths) which break the Temporal V8 sandbox. Config loading belongs in `packages/api`, `packages/worker`, and `packages/cli` — NOT in `core`. Core exports only the config Zod schema for validation.
 
 **Key implementation details:**
 - State machine is a pure map — no classes, no side effects
-- 14 states: `created`, `needs_clarification`, `assigned`, `in_progress`, `evidence_ready`, `changes_requested`, `approved`, `pr_created`, `external_checks_pending`, `addressing_review_feedback`, `external_blocked`, `merge_ready`, `merged`, `failed`
-- 18 transitions defined as `ReadonlyMap<TaskState, ReadonlySet<TaskState>>`
-- Terminal states (`merged`, `failed`) have zero outgoing transitions
+- **16 states** (added `paused` and `cancelled` to support kill switch, cost budget stops, and human-initiated cancellation):
+  `created`, `needs_clarification`, `assigned`, `in_progress`, `paused`, `evidence_ready`, `changes_requested`, `approved`, `pr_created`, `external_checks_pending`, `addressing_review_feedback`, `external_blocked`, `merge_ready`, `merged`, `failed`, `cancelled`
+- **22 transitions** (original 18 plus: `in_progress → paused`, `paused → in_progress`, `paused → cancelled`, `* → cancelled` from any non-terminal state)
+- Terminal states: `merged`, `failed`, `cancelled` — zero outgoing transitions
 - Zod schemas generate TypeScript types via `z.infer<>` — single source of truth
-- `AutonomyLevel`: L0 (human confirms every action), L1 (human reviews evidence before PR), L2 (human reviews PR)
+- **Autonomy levels per PRD R-009:**
+  - `L0`: Human confirms every action (branch creation, file writes, PR creation, merge)
+  - `L1`: Agent produces diffs and plans; human approval required BEFORE branch creation and file writes; human reviews evidence before PR (DEFAULT)
+  - `L2`: Agent can create branches, edit code, run tests, push to candidate branch autonomously; human approval required only for PR creation, merge, and editing hard-protected files. Requires evaluation baseline — **deferred to Phase 2**
 - Error codes with retry policies: `{ retryable: boolean, maxAttempts: number, backoffMs: number }`
+- **TrustedBaseContext** — Captured at intake phase, pinned to base SHA. Contains: base commit SHA, parsed `.factory/setup.yml`, parsed behavioral control files (from base ref only), policy snapshot, validation command sources. All downstream phases (M10, M11, M13) consume ONLY this artifact for control/policy/validation inputs. Candidate-branch edits to these files are treated as diff content in evidence, not as live inputs.
 
 **Verification:**
-- Unit tests for state machine: every valid transition returns true, every invalid transition returns false, terminal states have no outgoing
+- Unit tests for state machine: every valid transition returns true, every invalid transition returns false, terminal states have no outgoing, `paused` and `cancelled` transitions work correctly
 - Unit tests for Zod schemas: valid data passes, invalid data fails with expected errors
-- Unit tests for config loader: precedence ordering works correctly
+- Unit tests for PolicyDecisionService: read/write/deny/flag decisions correct for all policy types
 - `pnpm typecheck` passes
+- **Workflow bundle test: verify that importing `core` into a Temporal workflow bundle does NOT pull in Node.js built-ins**
 
 **Gotchas:**
-- DO NOT import Node.js APIs in this package — it must remain pure TypeScript for Temporal workflow compatibility
+- **CRITICAL: DO NOT put config loading, file I/O, or any Node.js APIs in this package** — it must remain pure TypeScript for Temporal workflow compatibility. Add a workflow-bundle CI test that fails if Node builtins leak into the dependency graph.
 - `neverthrow` Result types should wrap all fallible operations — no thrown exceptions at domain boundary
 - Zod `.strict()` on all object schemas to catch extra fields early
+- `CapabilitySnapshot` type is defined in M6, not here — avoid duplicate type definitions
 
 ---
 
@@ -456,10 +471,14 @@ software-factory/
 - `src/schema/code-index.ts` — 4 tables (versions, symbols, dependencies, files)
 - `src/schema/cost-records.ts` — LLM cost tracking
 - `src/schema/environment-states.ts` — Docker environment cache tracking
-- `src/repositories/task-repository.ts` — CRUD + state transitions
-- `src/repositories/audit-repository.ts` — Append-only insert + query
+- `src/schema/webhook-deliveries.ts` — Durable webhook dedup (`X-GitHub-Delivery` unique key, payload hash, status, processed_at)
+- `src/schema/side-effects.ts` — Idempotent external side-effect ledger (idempotency_key unique, effect_type, target_ref, request_hash, response_payload, status, timestamps)
+- `src/repositories/task-repository.ts` — **Transactional state+audit:** methods like `transitionTaskState(taskId, newState, actor, auditContent)` that wrap state mutation AND audit entry INSERT in a single `db.transaction()`. NEVER model state-change auditing as a separate operation.
+- `src/repositories/audit-repository.ts` — Append-only insert + query (for non-state-change audit entries)
 - `src/repositories/repo-repository.ts` — Repository CRUD
 - `src/repositories/policy-repository.ts` — Policy CRUD + glob matching
+- `src/repositories/webhook-repository.ts` — Webhook dedup: persist delivery before processing, check before re-processing
+- `src/repositories/side-effect-repository.ts` — Side-effect ledger: consult before creating GitHub resources, persist after
 - `src/encryption/envelope.ts` — AES-256-GCM encrypt/decrypt with KmsProvider interface
 - `src/encryption/local-kms.ts` — V1 KmsProvider using `FACTORY_MASTER_KEY` env var
 - `src/connection.ts` — `pg.Pool` setup with `max: 20`, Drizzle instance
@@ -468,9 +487,17 @@ software-factory/
 
 **Key schema details (critical for implementer):**
 
-Tasks table — 14-state enum, trigger-validated transitions:
+Tasks table — 16-state enum, trigger-validated transitions:
 - `id: uuid PK`, `state: task_state enum`, `objective: text NOT NULL`, `scope: jsonb`, `constraints: jsonb`, `budgetCents: numeric(10,0)`, `repoId: uuid FK`, `createdBy: text NOT NULL`, `createdAt/updatedAt: timestamptz`
-- Trigger `validate_task_transition` fires `WHEN (OLD.state IS DISTINCT FROM NEW.state)`, queries `task_valid_transitions(from_state, to_state)` composite PK table with 18 seeded rows
+- Trigger `validate_task_transition` fires `WHEN (OLD.state IS DISTINCT FROM NEW.state)`, queries `task_valid_transitions(from_state, to_state)` composite PK table with **22 seeded rows** (includes paused/cancelled transitions)
+
+Webhook deliveries table — Durable dedup for GitHub webhooks:
+- `id: uuid PK`, `deliveryId: text UNIQUE NOT NULL` (X-GitHub-Delivery), `event: text NOT NULL`, `action: text`, `payloadHash: text NOT NULL`, `status: text NOT NULL` (received/processing/processed/failed), `processedAt: timestamptz`, `createdAt: timestamptz NOT NULL`
+- Unique index on `deliveryId` — reprocessing checks this before enqueueing
+
+Side effects table — Idempotent external operation ledger:
+- `id: uuid PK`, `taskId: uuid FK`, `effectType: text NOT NULL` (create_pr/update_pr/post_comment/set_status/create_check_run), `idempotencyKey: text UNIQUE NOT NULL`, `targetRef: text`, `requestPayloadHash: text`, `responsePayload: jsonb`, `status: text NOT NULL` (pending/completed/failed), `errorMessage: text`, `createdAt/updatedAt: timestamptz`
+- M16/M17 MUST consult this ledger before creating/updating GitHub resources
 
 Audit entries — Append-only, partitioned, tamper-resistant:
 - Monthly RANGE partitions on `timestamp`
@@ -489,8 +516,11 @@ Envelope encryption:
 - `drizzle-kit generate` produces migration SQL
 - `drizzle-kit migrate` applies without errors
 - Integration test: insert task, transition state (valid → succeeds, invalid → trigger rejects)
+- Integration test: `transitionTaskState()` atomically writes state change AND audit entry in one transaction — verify both exist or neither exists on failure
 - Integration test: insert audit entry, attempt UPDATE (→ blocked by RLS)
 - Integration test: encrypt secret, decrypt secret, verify round-trip
+- Integration test: webhook dedup — inserting duplicate `deliveryId` is rejected
+- Integration test: side-effect ledger — consult before create, idempotency key prevents duplicates
 - Unit test: content hash computation is deterministic
 
 **Gotchas:**
@@ -512,21 +542,36 @@ Envelope encryption:
 
 **Files to create:**
 - `packages/api/src/server.ts` — Fastify instance with Zod type provider
-- `packages/api/src/routes/webhooks.ts` — GitHub webhook receiver
+- `packages/api/src/routes/webhooks.ts` — GitHub webhook receiver (persists to `webhook_deliveries` BEFORE processing)
 - `packages/api/src/routes/health.ts` — `/health`, `/health/ready`, `/health/live`
 - `packages/api/src/routes/setup.ts` — GitHub App manifest flow endpoint
-- `packages/temporal-activities/src/github/auth.ts` — JWT generation, installation token minting
-- `packages/temporal-activities/src/github/credential-broker.ts` — Token caching with 50-min rotation
+- `packages/api/src/middleware/auth.ts` — API key validation middleware, role enforcement (Admin/Operator/Viewer per R-018)
+- `packages/api/src/middleware/actor.ts` — Actor identity propagation (every request carries actor identity for audit)
+- `packages/db/src/schema/api-keys.ts` — API key table (hashed key, role, created_by, expires_at, last_used_at)
+- `packages/db/src/repositories/api-key-repository.ts` — API key CRUD, validation
+- `packages/temporal-activities/src/github/auth.ts` — JWT generation, installation token minting with **per-phase permission scoping**
+- `packages/temporal-activities/src/github/credential-broker.ts` — Token caching with 50-min rotation, per-phase scoped token creation
 - `packages/temporal-activities/src/github/client.ts` — Configured Octokit instances (REST + GraphQL)
 
 **Key implementation details:**
 - JWT: RS256, `iss` = client ID, `iat` = 60 seconds in the past (clock drift), `exp` = max 10 min
 - Installation tokens: 1-hour expiry (NOT configurable), rotate at ~50 min
+- **Per-phase token scoping:** Installation tokens CAN and MUST be narrowed at creation time using `permissions` and `repositories` parameters. Per-phase scoping table:
+
+| Task Phase | Permissions Scoped |
+|---|---|
+| Capability scan | `contents:read`, `administration:read`, `checks:read` |
+| Implementation | `contents:write`, `checks:write` |
+| PR creation | `contents:write`, `pull_requests:write` |
+| PR tracking | `pull_requests:read`, `checks:read`, `statuses:read` |
+| Merge queue enqueue | `contents:write`, `pull_requests:write` |
+
 - `@octokit/auth-app` handles token caching internally (toad-cache, 15K entries)
 - Webhook verification: `@octokit/webhooks` with `X-Hub-Signature-256` (HMAC-SHA256), timing-safe comparison
-- Idempotency: `X-GitHub-Delivery` header stored per webhook for dedup
-- Webhook handler: verify → persist → acknowledge → return (NO business logic in handler)
+- Idempotency: `X-GitHub-Delivery` header persisted to `webhook_deliveries` table BEFORE processing
+- Webhook handler: verify → persist to DB → acknowledge → enqueue for async processing (NO business logic in handler)
 - API version: `2026-03-10`
+- **Auth (R-018):** API key middleware on all mutating routes. Three roles: Admin (full), Operator (submit/review/kill), Viewer (read-only). Separation of duties: task submitter cannot be sole approver (configurable for solo developers). API key lifecycle: issue via CLI (`factory config api-key create`), hash stored in DB, role bound at creation.
 
 **Required GitHub App permissions:**
 - Repository: `contents:write`, `pull_requests:write`, `checks:write`, `statuses:write`, `issues:read`, `administration:read`, `merge_queues:read`
@@ -537,14 +582,19 @@ Envelope encryption:
 **Verification:**
 - Unit test: JWT generation produces valid token structure
 - Unit test: webhook signature verification (valid → passes, tampered → rejects)
+- Unit test: per-phase token scoping produces minimal permission set
 - Integration test: Fastify server starts, health endpoint returns 200
+- Integration test: mutating routes reject unauthenticated requests (401)
+- Integration test: Viewer role cannot access mutating endpoints (403)
+- Integration test: webhook delivery persisted to DB before processing
 - Manual test: Register GitHub App on a test org, receive installation webhook
 
 **Gotchas:**
 - `merge_group` events are ONLY delivered via app-level webhooks (not repository webhooks)
-- Installation token scope cannot be narrowed at creation time — scope enforcement is at the activity level
+- Installation tokens CAN be scoped — always mint with minimum permissions for the current phase
 - Must respond to webhooks within 10 seconds — async processing required
-- GitHub does NOT auto-redeliver failed webhooks — reconciliation is required (M20)
+- GitHub does NOT auto-redeliver failed webhooks — reconciliation is required (M17 scoped + M20 full)
+- Handle 401 from GitHub by refreshing token before retry (not just retrying with same expired token)
 
 ---
 
@@ -696,12 +746,16 @@ Envelope encryption:
 **Packages affected:** `packages/temporal-workflows`, `packages/temporal-activities`, `packages/worker`
 
 **Files to create:**
-- `packages/temporal-workflows/src/orchestrator.ts` — Parent workflow: spawns children, accumulates results
-- `packages/temporal-workflows/src/phases/intake.ts` — First phase: validate task, persist
-- `packages/temporal-workflows/src/signals.ts` — Signal definitions (kill, approve, changes_requested, resume)
-- `packages/temporal-workflows/src/queries.ts` — Query definitions (getState, getProgress)
-- `packages/temporal-activities/src/db/task-activities.ts` — DB read/write activities for tasks
-- `packages/temporal-activities/src/db/audit-activities.ts` — Audit entry creation activities
+- `packages/temporal-workflows/src/orchestrator.ts` — Parent workflow: spawns children, accumulates results, handles Continue-As-New for loop scenarios
+- `packages/temporal-workflows/src/phases/intake.ts` — First phase: validate task, capture `TrustedBaseContext` (pin base SHA, load control files from base ref), persist
+- `packages/temporal-workflows/src/phases/clarify.ts` — Clarification phase: blocks until human responds (R-002 AC: "Ambiguous objective enters `needs_clarification` and blocks until human responds")
+- `packages/temporal-workflows/src/signals.ts` — **Versioned signal union** with typed payloads: `kill` (actor), `approve` (actor, scope), `reject` (actor, reason), `changes_requested` (actor, message), `resume` (actor), `clarify_response` (actor, response), plus GitHub lifecycle signals (pr_review, check_complete, merge_queue_update). Include precedence rules (kill > any other signal).
+- `packages/temporal-workflows/src/queries.ts` — Query definitions (getState, getProgress, getPhase)
+- `packages/temporal-activities/src/db/task-activities.ts` — DB read/write activities using **transactional** repository methods (state change + audit in one call)
+- `packages/temporal-activities/src/db/audit-activities.ts` — Non-state-change audit entries only
+- `packages/temporal-activities/src/safety/kill-check.ts` — **Pulled forward from M19:** Redis kill switch check (`MGET factory:kill_switch factory:kill:{taskId}`), used at every activity entry point
+- `packages/temporal-activities/src/safety/cost-check.ts` — **Pulled forward from M19:** Redis cost budget check before every LLM call
+- `packages/temporal-activities/src/safety/branch-lease.ts` — **Pulled forward from M19:** Lua-based atomic acquire/release/heartbeat (NOT temporary — production-grade from day 1)
 - `packages/worker/src/worker.ts` — Worker process with 5 task queues
 - `packages/worker/src/interceptors.ts` — Logging interceptor (OTel deferred to M20)
 
@@ -732,18 +786,27 @@ Envelope encryption:
 | Docker | 15m | 30s | 3 | 1x |
 
 **Key patterns:**
-- Kill switch: Signal → set flag → check before every activity → `CancellationScope.nonCancellable` for cleanup
-- Human approval: Signal + `wf.condition(allHandlersFinished)` + 7-day timeout
+- Kill switch: Signal → set flag → check before every activity → `CancellationScope.nonCancellable` for cleanup → transition to `cancelled` state
+- Human approval: Signal + `wf.condition(allHandlersFinished)` + **configurable timeout (default 4 hours per PRD R-007)** with escalation
 - Idempotent writes: `INSERT ... ON CONFLICT (idempotency_key) DO NOTHING`
-- Continue-As-New: trigger at `continueAsNewSuggested` OR `historyLength > 10_000`
-- Patching: `patched('name')` / `deprecatePatch('name')` for safe code changes from day 1
+- Continue-As-New: trigger at `continueAsNewSuggested` OR `historyLength > 10_000`. **Explicit CAN rules for every looping phase:** review loops (changes_requested → re-implement → new evidence), PR feedback loops (external changes_requested → re-implement), and long waits (review, external checks). Persist `attempt` / `phaseIteration` counter so CAN restarts are lossless.
+- Patching: `patched('name')` / `deprecatePatch('name')` for safe code changes from day 1. **Workflow versioning policy:** patch names per behavior change, versioned workflow input/result types, replay fixtures captured before each milestone that changes workflow behavior, worker rollout rules for in-flight executions.
+- Clarification: `needs_clarification` signal + `wf.condition()` blocks until `clarify_response` signal received. No timeout — human must respond.
+- Autonomy gating: Before any branch creation or file write (M12), check autonomy level. At L0/L1, wait for explicit approval signal. At L2 (Phase 2 only), proceed with candidate branch autonomously.
+- Cost budget: Check Redis before every LLM activity. 80% → notification, 100% → transition to `paused`, require human override to resume.
 
 **Verification:**
 - Test: Start parent workflow, verify child phase spawns
-- Test: Send kill signal, verify workflow cancels within 5 seconds
-- Test: Time-skipping test for 7-day human approval timeout
+- Test: Send kill signal, verify workflow transitions to `cancelled` within 5 seconds
+- Test: Time-skipping test for **4-hour** human approval timeout with escalation
+- Test: Time-skipping test for review loop (changes_requested → re-implement → new evidence → re-review)
 - Test: `Worker.runReplayHistory` — determinism verification
 - Test: Worker starts, connects to Temporal, registers all task queues
+- Test: needs_clarification signal blocks until clarify_response received
+- Test: Kill switch check fires at every activity entry point (Redis `MGET`)
+- Test: Cost budget pause transitions task to `paused` state
+- Test: Branch lease acquire/release with Lua scripts prevents concurrent writes
+- **Replay test: capture fixture with one internal review loop and one external review loop, verify replay succeeds after code changes**
 
 **Gotchas:**
 - `temporal-workflows` package CANNOT import `temporal-activities` — use `proxyActivities<T>()` with type-only import
@@ -751,6 +814,8 @@ Envelope encryption:
 - Never call Continue-As-New from inside a signal handler
 - 2 MB argument limit — large data goes to Postgres with references
 - `async-mutex` is safe in the workflow sandbox (for concurrent signal handlers)
+- **Parent workflow history will exceed 104 events when review/feedback loops occur.** The estimate of 104 assumes a single linear pass. Add explicit CAN triggers for the parent when loop count exceeds threshold.
+- **Safety primitives (kill check, cost check, branch lease) are production-grade in this milestone**, NOT temporary stubs. M19 adds operator UX, global controls, circuit breakers, and override flows on top of this foundation.
 
 ---
 
@@ -856,13 +921,20 @@ Envelope encryption:
 
 | Tool | Purpose | Security Constraint |
 |------|---------|-------------------|
-| file_read | Read file content | Governance filter applied |
-| file_write | Write entire file | Protected path check |
-| file_edit | Search/replace edit | Protected path check, fuzzy match |
-| search_codebase | Regex search | Governance filter on results |
-| run_command | Execute shell command | Allowlisted commands only |
-| list_files | List directory | Governance filter applied |
-| search_text | Text search (ripgrep) | Governance filter on results |
+| file_read | Read file content | PolicyDecisionService: governance filter applied |
+| file_write | Write entire file | PolicyDecisionService: protected path check, deny on excluded paths |
+| file_edit | Search/replace edit | PolicyDecisionService: protected path check, fuzzy match |
+| search_codebase | Regex search | PolicyDecisionService: governance filter on results |
+| run_command | Execute shell command | Allowlisted commands + **post-command diff validation** (see below) |
+| list_files | List directory | PolicyDecisionService: governance filter applied |
+| search_text | Text search (ripgrep) | PolicyDecisionService: governance filter on results |
+
+**CRITICAL: `run_command` governance enforcement.** Allowlisting alone is insufficient — any allowed command (generators, test runners updating snapshots, `git apply`, etc.) can mutate protected or denied paths. Enforcement strategy:
+1. Capture `git diff --name-only` before and after command execution
+2. Run PolicyDecisionService on every changed path
+3. If ANY changed path would be denied or flagged by policy, FAIL the step and revert the changes
+4. Log all changed paths in audit trail
+This ensures the governance boundary is enforced regardless of which tool the agent uses.
 
 **5 self-healing guardrails:**
 1. Iteration count: max 10 steps (configurable)
@@ -911,25 +983,34 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - `packages/temporal-activities/src/github/branch.ts` — Candidate branch creation (`factory/{task-id}`)
 
 **Key implementation details:**
-- Task submission → Temporal workflow start → intake phase → persist task
+- Task submission → Temporal workflow start → intake phase → **capture TrustedBaseContext** (pin base SHA, load `.factory/setup.yml` and behavioral control files from base ref ONLY) → persist task
+- If objective is ambiguous: transition to `needs_clarification`, block until `clarify_response` signal
+- **Autonomy gate (L1 default):** Before branch creation or ANY file writes, check autonomy level. At L0/L1, transition to `evidence_ready`-like state and wait for human approval signal before proceeding. At L2 (Phase 2 only), proceed autonomously.
 - Understand phase: run code indexing (M7), produce repo map, identify relevant files
 - Plan phase: LLM generates implementation plan based on objective + code understanding
-- Setup phase: Docker sandbox creation (M10) with setup contract
+- Setup phase: Docker sandbox creation (M10) with setup contract **loaded from TrustedBaseContext (base ref), NOT from candidate branch**
 - Implement phase: LLM agent (M11) executes plan in sandbox, produces code changes
-- Candidate branch: `factory/{task-id}` created via Git Database API (auto-signed commits)
-- Branch lease: Redis `SET NX EX` to prevent concurrent writes to same branch target
+- Candidate branch: `factory/{task-id}` created via Git Database API (auto-signed commits). **Consult EffectiveRepoConstraints from capability scan (M6) for branch naming rules, push restrictions, and commit message patterns.**
+- Branch lease: **Production-grade Lua-based** acquire/release/heartbeat (defined in M9 safety primitives)
+- **For repos without `.factory/setup.yml`:** Generate suggested contract from devcontainer.json/Dockerfile/GitHub Actions (per PRD Section 7.1), present to human for approval before use. Factory never silently infers and executes setup.
+- **All tool invocations route through PolicyDecisionService** (from M2) for path governance enforcement
 
 **Verification:**
 - End-to-end test: submit task → workflow starts → phases execute → code changes appear on candidate branch
 - Test: task state transitions correctly through `created → assigned → in_progress`
+- Test: **L1 autonomy gate: task blocks before branch creation until human approves**
 - Test: branch lease prevents two tasks from writing to same branch
-- Test: setup contract is respected (correct Docker image, setup commands)
+- Test: setup contract is loaded from base ref, NOT candidate branch
+- Test: TrustedBaseContext pin — candidate-branch edits to `.factory/setup.yml` do NOT affect agent behavior
+- Test: repo without `.factory/setup.yml` → generates suggestion → blocks for human approval
+- Test: EffectiveRepoConstraints from capability scan are consumed for branch naming and push validation
 
 **Gotchas:**
 - Candidate branch must be created BEFORE any code changes (Git Database API 6-step sequence)
-- Branch naming: `factory/{task-id}` (not `factory/task-{id}`)
-- Branch lease with Lua script for atomic check-and-modify (M19 will add full implementation)
+- Branch naming: `factory/{task-id}` (not `factory/task-{id}`) — but check EffectiveRepoConstraints for repo-specific rules
+- Branch lease is production-grade with Lua scripts — NOT a temporary stub
 - Implementation phase may need Continue-As-New for long tasks (>10K events)
+- **TrustedBaseContext must be captured at intake and passed to all downstream phases.** If implementers load workspace files directly instead, the trusted-boundary invariant is violated.
 
 ---
 
@@ -947,10 +1028,17 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - `packages/temporal-activities/src/validation/blast-radius.ts` — Analyze change impact
 - `packages/core/src/types/validation.ts` — `ValidationResult`, `TestResult`, `ScanResult`, `BlastRadius`
 
+**Trusted Validator Boundary (CRITICAL):**
+Validation runs in a **fresh workspace or separate container context** where:
+- Behavioral control files (`.factory/setup.yml`, test configs, CI definitions, Semgrep config, evaluator scripts) come from the **pinned base SHA** (via TrustedBaseContext from intake)
+- Candidate-branch changes are overlaid ONLY onto allowed source paths
+- Agent edits to validator-control files are **ignored** — they appear in evidence as diff content but do NOT alter validation behavior
+- This ensures the agent cannot modify what "validation" means in the same attempt
+
 **Validation steps:**
-1. Run project test suite in sandbox → capture results
-2. Run linter → capture results
-3. Run Semgrep CE (SAST) → SARIF output
+1. Run project test suite in sandbox → capture results (test config from base ref)
+2. Run linter → capture results (linter config from base ref)
+3. Run Semgrep CE (SAST) → SARIF output (Semgrep rules from base ref)
 4. Run Syft (SBOM) → SPDX output
 5. Run Grype (vulnerability scan) → structured results
 6. Compute blast radius (files changed, packages affected, protected surface edits)
@@ -968,9 +1056,13 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - Test: Semgrep detects a known vulnerability pattern
 - Test: blast radius correctly identifies protected file edits
 - Test: revertability classification is correct
+- **Test: candidate-branch edits to `.factory/setup.yml` do NOT change validation behavior (base-ref version used)**
+- **Test: candidate-branch edits to test config files do NOT alter which tests run or how they're configured**
+- **Test: candidate-branch edits to Semgrep rules do NOT alter security scanning**
 
 **Gotchas:**
-- Test execution happens in the sandbox (M10) — same container, execution phase
+- **Validator isolation is a SECURITY BOUNDARY** — the agent must not be able to influence its own evaluation
+- Test execution happens in the sandbox (M10) — validator reads control files from TrustedBaseContext, not workspace
 - Security scanners need to be installed in the container image (or exec'd separately)
 - SARIF 2.1.0 format for GitHub code scanning compatibility
 - Validation must run on the candidate branch diff, not the whole repo
@@ -993,17 +1085,25 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - `packages/temporal-activities/src/evidence/artifact-store.ts` — MinIO upload/download
 - `packages/core/src/schemas/evidence.ts` — Evidence packet Zod schema (versioned)
 
-**Evidence packet contents (10 sections per Codex 5.4):**
+**Evidence packet fields (13 required per PRD R-008):**
 1. Objective
-2. Authority scope used
-3. Files touched
-4. Files intentionally excluded
-5. Validation steps run
-6. Test outcomes
-7. Risk summary
-8. Known uncertainties
-9. Why the system believes the change is safe enough
-10. Raw artifacts and reproducibility links
+2. Annotated diff (with per-hunk explanations)
+3. Blast radius (files changed, packages affected)
+4. Owners impacted (from CODEOWNERS analysis)
+5. Test results (pass/fail/skip counts, output)
+6. Security scan results (Semgrep SARIF)
+7. Lint/type-check results
+8. Protected-surface edits (flagged paths with justification)
+9. Migration/schema impact (if applicable)
+10. Revertability class (clean_revert | revert_with_migration | non_revertable)
+11. Unresolved assumptions (what the agent wasn't sure about)
+12. Commands and checks run (exact commands with exit codes)
+13. Pending external checks (what still needs to pass after PR creation)
+
+**NOTE:** PRD explicitly says "evidence-derived fields only — no model self-assessed confidence scores." Do NOT include "why the system believes the change is safe" as a field. The evidence speaks for itself.
+
+**Presentation layer (optional, for CLI/dashboard):**
+The Codex 5.4 10-section layout (objective, authority scope, files touched, files excluded, validation steps, test outcomes, risk summary, uncertainties, safety rationale, artifacts) can be used as a PRESENTATION format on top of the 13 required data fields — but the underlying schema MUST match R-008.
 
 **Artifacts stored in MinIO:**
 - `evidence.json` — Main evidence packet
@@ -1047,7 +1147,7 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - `packages/cli/src/commands/review.ts` — `factory review <task-id>` — interactive review
 - `packages/cli/src/ui/evidence-viewer.tsx` — Ink component for evidence display
 - `packages/cli/src/ui/diff-viewer.tsx` — Annotated diff display
-- `packages/temporal-workflows/src/phases/review.ts` — Review phase (waits for signal, 7-day timeout)
+- `packages/temporal-workflows/src/phases/review.ts` — Review phase (waits for signal, configurable timeout — default **4 hours** per PRD R-007, with escalation)
 
 **Review flow:**
 1. Task reaches `evidence_ready` state
@@ -1069,12 +1169,12 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - Test: `factory evidence <task>` displays all 10 evidence sections
 - Test: `factory approve <task>` sends signal, state transitions to `approved`
 - Test: `factory changes <task>` sends signal, state transitions to `changes_requested`
-- Test: review phase times out after 7 days (time-skipping test)
+- Test: review phase times out after **4 hours** (configurable, time-skipping test) and fires escalation
 - Test: rejected task transitions to `failed` (terminal)
 
 **Gotchas:**
-- Review signal must include operator ID (for audit: task submitter ≠ sole approver)
-- 7-day timeout on review — escalate or fail
+- Review signal must include operator ID (for audit: task submitter ≠ sole approver per R-018)
+- Default **4-hour timeout** on evidence review (configurable per PRD R-007) — escalation fires on timeout. Long-lived PR tracking (days/weeks) is a SEPARATE concern handled in M17, not the evidence review SLA.
 - `@inquirer/prompts` for interactive menu, `--non-interactive` flag for CI
 - Evidence may be stale if base branch moves — check freshness before approval
 
@@ -1098,9 +1198,13 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - Check runs are GitHub-App-only feature
 - Merge endpoint requires SHA safety check (prevent merging stale PR)
 
-**PR creation (idempotent):**
+**PR creation (idempotent via side-effects ledger):**
+- Consult `side_effects` table BEFORE creating GitHub resources
 - Idempotency key: `hash(task_id + 'create_pr' + candidate_branch + base_sha)`
+- If side-effect already recorded as completed, skip. If failed, retry.
 - If PR already exists (conflict), update instead of create
+- Record result in `side_effects` ledger AFTER successful creation
+- Handles partial failure: "PR created but DB write failed" is recoverable on retry
 
 **Verification:**
 - Test: PR created on test repo with correct title, body, base/head branches
@@ -1137,7 +1241,10 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 - `merge_group.checks_requested` → monitor merge queue
 - etc.
 
-**Stale review detection:** Hybrid webhook + GraphQL (`reviewDecision`) + periodic reconciliation.
+**Scoped active-PR reconciler (pulled forward from M20):**
+While a PR is open, poll on a schedule (every 5 min) for: PR state, `reviewDecision` (GraphQL), unresolved threads, check status. This prevents runs from stranding in `external_checks_pending` or `addressing_review_feedback` if webhooks are lost. M20 adds broader scheduled reconciliation for inactive resources.
+
+**Stale review detection:** Hybrid webhook + GraphQL (`reviewDecision`) + scoped reconciler.
 **Review thread tracking:** GraphQL query for `isResolved`, `isOutdated`.
 
 **Feedback loop:**
@@ -1200,18 +1307,18 @@ System prompt (top) → Repo map → Task objective → Plan → Files → Tool 
 
 ---
 
-### M19: Safety Controls
+### M19: Safety Controls — Operator UX + Hardening
 
-**Goal:** Kill switch stops execution immediately. Cost budgets prevent runaway spending. Circuit breakers protect external services.
+**Goal:** Operator-facing kill/cost/override UX, circuit breakers for external services, and global safety controls. NOTE: Core safety primitives (kill check, cost check, branch lease) were built production-grade in M9 — this milestone adds operator tooling and hardening on top.
 
 **Packages affected:** `packages/temporal-activities`, `packages/api`, `packages/cli`
 
 **Files to create:**
-- `packages/temporal-activities/src/safety/kill-switch.ts` — Redis-based kill check
-- `packages/temporal-activities/src/safety/cost-budget.ts` — Redis INCR cost tracking
-- `packages/temporal-activities/src/safety/circuit-breaker.ts` — Per-service circuit breakers
+- `packages/temporal-activities/src/safety/circuit-breaker.ts` — Per-service circuit breakers (GitHub, OpenRouter, Docker)
 - `packages/cli/src/commands/kill.ts` — `factory kill <task-id>` and `factory kill --all`
-- `packages/api/src/routes/tasks.ts` — (update) Kill endpoint
+- `packages/cli/src/commands/budget.ts` — `factory budget --task <id> --override` for human cost-override
+- `packages/api/src/routes/tasks.ts` — (update) Kill endpoint, budget override endpoint
+- `packages/api/src/routes/safety.ts` — Global kill switch, circuit breaker status
 
 **Redis keys:**
 - `factory:kill_switch` — Global kill (value: "1" = active)
@@ -1517,48 +1624,30 @@ These require human action outside of code. Tagged with the milestone that depen
 
 ---
 
-## 12. Open Questions
+## 12. Resolved Decisions (formerly Open Questions)
 
-These need human input before the relevant milestone. Grouped by domain.
+All questions resolved. Decisions are locked unless implementation reveals a concrete problem.
 
-### Architecture (Before M1)
-
-1. **Fastify or no API package?** — Research recommends Fastify. Plan includes `packages/api/`. Confirm this is the right split vs. embedding HTTP in the worker.
-2. **7 packages or 6?** — Plan adds `api` package to the research's 6. Confirm.
-
-### Temporal (Before M9)
-
-3. **Separate Postgres instance for Temporal?** — auto-setup uses same instance with separate databases. Sufficient for Phase 1?
-4. **Workflow granularity:** 11 child phase workflows per the plan. Too many? Too few?
-5. **Namespace:** Single Temporal namespace or multi? Single is simpler.
-
-### Docker / Sandbox (Before M10)
-
-6. **Docker socket access pattern:** Worker on host (recommended) or in container with mounted socket?
-7. **macOS dev parity:** How much of the security profile (userns-remap, XFS quotas) must work on macOS?
-8. **Concurrent container limit:** What's the default? Based on host resources.
-
-### GitHub (Before M5)
-
-9. **CLI auth mechanism:** API key in config, keychain, env var, or all three?
-10. **Which GitHub plan/tier for testing?** Free, Team, or Enterprise affects available features (rulesets, merge queue).
-
-### Product / Business (Before M8)
-
-11. **Observer Mode as explicit product mode?** — Codex 5.4 recommends it strongly. If yes, it's the first user-visible feature (M8).
-12. **L2 autonomy evaluation in Phase 1 or Phase 2?** — L2 means agent creates PR without human evidence review. Consider deferring.
-13. **Multi-tenant or single-tenant for V1?** — PRD says "self-hosted." Single-tenant is simpler.
-
-### Database (Before M4)
-
-14. **Partition automation:** Temporal workflow, startup check, or cron? Temporal aligns with existing infrastructure.
-15. **Read-only dashboard role?** Third DB role beyond `factory_app` and `factory_admin`?
-
-### LLM (Before M11)
-
-16. **Repo map implementation:** Custom or adapt Aider's (Apache 2.0)?
-17. **Edit format per-model or standardized?** Some models handle search/replace better than others.
-18. **Evidence generation: same model or separate cheaper model?**
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | Separate API package? | **Yes — 7 packages** | HTTP lifecycle differs from Temporal worker; clean webhook/REST separation |
+| 2 | 7 packages or 6? | **7** | `packages/api` is well-justified (see above) |
+| 3 | Separate Postgres for Temporal? | **Same instance, separate databases** | Standard pattern; no benefit to separation at Phase 1 scale |
+| 4 | Workflow granularity? | **One child workflow per PRD step** | Granular = independently testable, restartable, evolvable |
+| 5 | Temporal namespace? | **Single namespace** | Multi-namespace adds zero value for single-tenant product |
+| 6 | Docker socket pattern? | **Worker on host** | Socket-in-container is OWASP anti-pattern |
+| 7 | macOS dev parity? | **Reduced profile acceptable** | Full security on Linux production; macOS dev works without userns-remap/XFS quotas |
+| 8 | Concurrent container limit? | **Default 5, configurable** | Matches `sf-docker` task queue concurrency |
+| 9 | CLI auth? | **API key in TOML config + `FACTORY_API_KEY` env var** | Aligns with 5-tier config precedence |
+| 10 | GitHub tier for testing? | **Team tier minimum** | Free tier lacks rulesets and merge queue |
+| 11 | Observer Mode? | **Yes — explicit Stage 1 product mode** | Strong consensus; first value delivery with zero risk |
+| 12 | L2 in Phase 1? | **No — deferred to Phase 2** | L0/L1 only in Phase 1; L2 requires evaluation baseline per PRD |
+| 13 | Multi-tenant? | **Single-tenant for V1** | PRD says self-hosted; multi-tenancy is a known later migration |
+| 14 | Partition automation? | **Temporal scheduled workflow** | Aligns with existing infrastructure; creates partitions 3 months ahead |
+| 15 | Dashboard DB role? | **No separate DB role** | Viewer API role (R-018) handles read-only access at application layer |
+| 16 | Repo map implementation? | **Custom, following Aider's documented algorithm** | Apache 2.0 algorithm well-documented; Aider code is Python, not portable |
+| 17 | Edit format? | **Standardized search/replace** | Works across models; per-model adds complexity for marginal gain |
+| 18 | Evidence model? | **Same model Phase 1, configurable Phase 2** | Simplicity first; model-class routing is a Phase 2 feature |
 
 ---
 
@@ -1567,19 +1656,47 @@ These need human input before the relevant milestone. Grouped by domain.
 These MUST be true at every milestone. Violations are bugs, not features.
 
 1. **Excluded paths never enter the index** — governance filter is FIRST in pipeline
-2. **Candidate-branch behavior files never change live behavior** — validator reads base ref only
-3. **Validator never reads candidate-branch policy** — policy comes from trusted base ref
-4. **PR not created before human approval** (at L0/L1)
+2. **Candidate-branch behavior files never change live behavior** — TrustedBaseContext captures control files from base ref at intake; all downstream phases consume ONLY that artifact
+3. **Validator never reads candidate-branch policy/config** — validation commands, test configs, security rules, and policy come from the pinned base SHA via TrustedBaseContext
+4. **PR not created before human approval** (at L0/L1) — and at L1, branch creation and file writes also require approval
 5. **No hidden provider failover** unless policy explicitly allows
-6. **Every mutating step is auditable** — audit entry for every state change
-7. **Every attempt produces portable evidence** — evidence packet is the core product artifact
+6. **Every mutating step is auditable** — state change AND audit entry in a single database transaction, never separate operations
+7. **Every attempt produces portable evidence** — evidence packet is the core product artifact with all 13 PRD R-008 fields
 8. **Secrets never appear in evidence, logs, or UI** — mandatory redaction pipeline
 9. **State transitions are enforced by the database** — trigger validates, not just application code
 10. **Postgres is the system of record** — Temporal is the workflow engine, not the source of truth
+11. **Path governance is enforced on ALL mutation paths** — file_write, file_edit, AND run_command all route through PolicyDecisionService. run_command has post-execution diff validation.
+12. **External side effects are idempotent** — all GitHub mutations (PR creation, check runs, comments) use the side_effects ledger with idempotency keys
+13. **Webhook processing is durable** — every webhook is persisted to `webhook_deliveries` BEFORE processing; dedup on `X-GitHub-Delivery`
 
 ---
 
-## 14. ADR Candidates
+## 14. P0 Requirement Traceability (R-001 — R-018)
+
+| Req | Description | Milestone(s) | Status |
+|-----|-------------|-------------|--------|
+| R-001 | Task creation from issue/API | M9 (intake), M12 (submission API) | Complete |
+| R-002 | Task lifecycle (state machine, transitions) | M2 (types), M4 (DB trigger), M9 (workflows), M12-M18 (phases) | Complete — includes `needs_clarification` flow |
+| R-003 | Repository analysis (index + capability) | M6 (capability scan), M7 (code indexing) | Complete |
+| R-004 | GitHub App integration | M5 (auth/webhooks), M6 (scan), M16-M18 (PR/merge) | Complete |
+| R-005 | PR lifecycle | M16 (creation), M17 (tracking), M18 (merge) | Complete — per-phase token scoping enforced |
+| R-006 | Sandboxed execution | M10 (Docker supervisor), M13 (validation in sandbox) | Complete |
+| R-007 | Human review + approval | M15 (CLI review), M9 (4h configurable timeout + escalation) | Complete |
+| R-008 | Evidence packet (13 fields) | M14 (generation), M15 (display) | Complete — all 13 PRD fields |
+| R-009 | Autonomy levels (L0/L1/L2) | M2 (types), M9 (workflow gates), M12 (L1 branch-creation gate) | Complete for L0/L1 — L2 deferred to Phase 2 |
+| R-010 | Path/file governance | M2 (PolicyDecisionService), M7 (index filter), M11 (tool enforcement + run_command diff validation) | Complete |
+| R-011 | Behavioral control files from trusted base ref | M2 (TrustedBaseContext type), M12 (capture at intake), M13 (validator isolation) | Complete |
+| R-012 | Audit trail (append-only, tamper-resistant) | M4 (DB schema, RLS, partitions), M9 (transactional audit) | Complete |
+| R-013 | Secret management (phase-separated, encrypted) | M4 (envelope encryption), M10 (exec-based injection), M5 (per-phase token scoping) | Complete |
+| R-014 | Code understanding (index, repo map) | M7 (tree-sitter + PageRank repo map) | Complete |
+| R-015 | Repository setup (.factory/setup.yml) | M10 (parsing/execution), M12 (generation for repos without contract) | Complete |
+| R-016 | Validation pipeline | M13 (tests, lint, Semgrep/Syft/Grype, blast radius) | Complete |
+| R-017 | Cost tracking + budgets | M9 (Redis cost check), M11 (OpenRouter cost tracking), M19 (operator overrides) | Complete |
+| R-018 | Auth + roles (Admin/Operator/Viewer) | M5 (API key middleware, role model, separation of duties) | Complete |
+
+---
+
+## 15. ADR Candidates
 
 Record these in `docs/decisions.md` as milestones lock them in:
 

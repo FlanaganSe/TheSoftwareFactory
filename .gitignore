@@ -6,3 +6,15 @@ CLAUDE.local.md
 
 # OS
 .DS_Store
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example

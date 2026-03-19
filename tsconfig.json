@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/db" },
+    { "path": "packages/temporal-workflows" },
+    { "path": "packages/temporal-activities" },
+    { "path": "packages/api" },
+    { "path": "packages/worker" },
+    { "path": "packages/cli" }
+  ]
+}
