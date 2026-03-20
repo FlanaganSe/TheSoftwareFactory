@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { createApproveCommand } from "./commands/approve.js";
+import { createBudgetCommand } from "./commands/budget.js";
 import { createChangesCommand } from "./commands/changes.js";
 import { createConfigCommand } from "./commands/config.js";
 import { createEvidenceCommand } from "./commands/evidence.js";
 import { createHealthCommand } from "./commands/health.js";
+import { createKillCommand } from "./commands/kill.js";
 import { createRejectCommand } from "./commands/reject.js";
 import { createReviewCommand } from "./commands/review.js";
+import { createSafetyCommand } from "./commands/safety.js";
 import { createStatusCommand } from "./commands/status.js";
 import { type CLIConfig, loadConfig } from "./config.js";
 
@@ -45,5 +48,8 @@ program.addCommand(createChangesCommand(getConfig));
 program.addCommand(createReviewCommand(getConfig));
 program.addCommand(createConfigCommand(getConfig));
 program.addCommand(createHealthCommand(getConfig));
+program.addCommand(createKillCommand(getConfig));
+program.addCommand(createBudgetCommand(getConfig));
+program.addCommand(createSafetyCommand(getConfig));
 
 program.parse();

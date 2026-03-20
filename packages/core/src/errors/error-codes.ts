@@ -10,6 +10,7 @@ export const ERROR_CODES = [
   "model_validation_fail",
   "evidence_invariant_fail",
   "storage_unavailable",
+  "service_unavailable",
   "unknown_internal",
 ] as const;
 
@@ -34,6 +35,7 @@ export const ERROR_RETRY_POLICIES: Readonly<
   model_validation_fail: { retryable: true, maxAttempts: 2, backoffMs: 1_000 },
   evidence_invariant_fail: { retryable: false, maxAttempts: 1, backoffMs: 0 },
   storage_unavailable: { retryable: true, maxAttempts: 5, backoffMs: 30_000 },
+  service_unavailable: { retryable: true, maxAttempts: 3, backoffMs: 10_000 },
   unknown_internal: { retryable: false, maxAttempts: 1, backoffMs: 0 },
 };
 

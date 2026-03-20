@@ -13,6 +13,7 @@ export interface ServerOptions {
   readonly logger: boolean;
   readonly dbConnection: DbConnection;
   readonly webhookSecret: string;
+  readonly redisUrl?: string;
 }
 
 export function createServer(options: ServerOptions): FastifyInstance {
@@ -33,6 +34,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
   app.decorate("db", options.dbConnection.db);
   app.decorate("dbPool", options.dbConnection.pool);
   app.decorate("webhookSecret", options.webhookSecret);
+  app.decorate("redisUrl", options.redisUrl);
 
   return app;
 }

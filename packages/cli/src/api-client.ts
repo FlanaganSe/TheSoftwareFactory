@@ -51,6 +51,47 @@ export interface HealthResponse {
   readonly checks?: Record<string, unknown>;
 }
 
+export interface CircuitBreakerStatusResponse {
+  readonly service: string;
+  readonly state: string;
+  readonly consecutiveFailures: number;
+  readonly lastFailureAt: string | null;
+  readonly lastSuccessAt: string | null;
+  readonly trippedAt: string | null;
+  readonly nextRetryAt: string | null;
+}
+
+export interface ActiveKillResponse {
+  readonly scope: "global" | "task";
+  readonly taskId?: string;
+  readonly actor: string;
+  readonly reason?: string;
+  readonly activatedAt: string;
+}
+
+export interface TaskCostResponse {
+  readonly taskId: string;
+  readonly currentCents: number;
+  readonly budgetCents: number;
+  readonly percentUsed: number;
+  readonly overBudget: boolean;
+}
+
+export interface DailyCostResponse {
+  readonly date: string;
+  readonly totalCents: number;
+  readonly budgetCents: number;
+  readonly percentUsed: number;
+  readonly taskBreakdown: readonly { taskId: string; costCents: number }[];
+}
+
+export interface SafetyStatusResponse {
+  readonly globalKill: boolean;
+  readonly activeKills: readonly ActiveKillResponse[];
+  readonly circuits: readonly CircuitBreakerStatusResponse[];
+  readonly dailyCost: DailyCostResponse;
+}
+
 export interface ApiError {
   readonly error: {
     readonly code: string;
@@ -71,6 +112,17 @@ export interface ApiClient {
   requestChanges(taskId: string, message: string): Promise<void>;
   killTask(taskId: string, reason?: string): Promise<void>;
   checkHealth(): Promise<HealthResponse>;
+  getSafetyStatus(): Promise<SafetyStatusResponse>;
+  activateGlobalKill(reason?: string): Promise<{ workflowsSignaled: number }>;
+  deactivateGlobalKill(): Promise<void>;
+  getActiveKills(): Promise<readonly ActiveKillResponse[]>;
+  getCircuitBreakers(): Promise<readonly CircuitBreakerStatusResponse[]>;
+  resetCircuitBreaker(service: string): Promise<void>;
+  tripCircuitBreaker(service: string): Promise<void>;
+  getDailyCost(date?: string): Promise<DailyCostResponse>;
+  setDailyBudget(budgetCents: number): Promise<void>;
+  overrideTaskBudget(taskId: string, budgetCents: number): Promise<void>;
+  getTaskCost(taskId: string): Promise<TaskCostResponse>;
 }
 
 class ApiClientError extends Error {
@@ -187,6 +239,78 @@ export function createApiClient(config: CLIConfig): ApiClient {
 
     async checkHealth(): Promise<HealthResponse> {
       return request<HealthResponse>("GET", "/health/ready");
+    },
+
+    async getSafetyStatus(): Promise<SafetyStatusResponse> {
+      return request<SafetyStatusResponse>("GET", "/api/safety/status");
+    },
+
+    async activateGlobalKill(
+      reason?: string,
+    ): Promise<{ workflowsSignaled: number }> {
+      return request<{ workflowsSignaled: number }>(
+        "POST",
+        "/api/safety/kill/global",
+        { reason },
+      );
+    },
+
+    async deactivateGlobalKill(): Promise<void> {
+      await request<unknown>("DELETE", "/api/safety/kill/global");
+    },
+
+    async getActiveKills(): Promise<readonly ActiveKillResponse[]> {
+      const resp = await request<{ kills: readonly ActiveKillResponse[] }>(
+        "GET",
+        "/api/safety/kill",
+      );
+      return resp.kills;
+    },
+
+    async getCircuitBreakers(): Promise<
+      readonly CircuitBreakerStatusResponse[]
+    > {
+      const resp = await request<{
+        circuits: readonly CircuitBreakerStatusResponse[];
+      }>("GET", "/api/safety/circuits");
+      return resp.circuits;
+    },
+
+    async resetCircuitBreaker(service: string): Promise<void> {
+      await request<unknown>("POST", `/api/safety/circuits/${service}/reset`);
+    },
+
+    async tripCircuitBreaker(service: string): Promise<void> {
+      await request<unknown>("POST", `/api/safety/circuits/${service}/trip`);
+    },
+
+    async getDailyCost(date?: string): Promise<DailyCostResponse> {
+      const path = date
+        ? `/api/safety/costs/daily/${date}`
+        : "/api/safety/costs/daily";
+      return request<DailyCostResponse>("GET", path);
+    },
+
+    async setDailyBudget(budgetCents: number): Promise<void> {
+      await request<unknown>("POST", "/api/safety/budget/daily", {
+        budgetCents,
+      });
+    },
+
+    async overrideTaskBudget(
+      taskId: string,
+      budgetCents: number,
+    ): Promise<void> {
+      await request<unknown>("POST", `/api/tasks/${taskId}/budget`, {
+        budgetCents,
+      });
+    },
+
+    async getTaskCost(taskId: string): Promise<TaskCostResponse> {
+      return request<TaskCostResponse>(
+        "GET",
+        `/api/safety/costs/task/${taskId}`,
+      );
     },
   };
 }

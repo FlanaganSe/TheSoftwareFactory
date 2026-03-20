@@ -11,6 +11,7 @@ declare module "fastify" {
     db: DbInstance;
     dbPool: unknown;
     webhookSecret: string;
+    redisUrl?: string;
   }
 }
 

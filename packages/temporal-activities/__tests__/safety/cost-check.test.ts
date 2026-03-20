@@ -15,7 +15,7 @@ let activities: ReturnType<typeof createCostCheckActivity>;
 
 beforeAll(async () => {
   const redisUrl = inject("redisUrl");
-  redis = new Redis(redisUrl, { lazyConnect: false });
+  redis = new Redis(redisUrl, { lazyConnect: false, db: 1 });
   activities = createCostCheckActivity(redis);
 });
 
@@ -24,7 +24,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await redis.flushall();
+  await redis.flushdb();
 });
 
 describe("checkCostBudget", () => {

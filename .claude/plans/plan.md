@@ -381,7 +381,13 @@ software-factory/
 > **Goal:** Add kill switch, cost controls, reconciliation, observability, and end-to-end testing.
 > **Human review gate:** Verify kill switch stops execution immediately. Review cost tracking accuracy. Validate reconciliation recovers from missed webhooks.
 
-- [ ] **M19: Safety Controls** — Redis kill switch (global + per-task), circuit breakers, cost budgets ($10/task, $100/day), retry limits
+- [x] **M19: Safety Controls** — Redis kill switch (global + per-task), circuit breakers, cost budgets ($10/task, $100/day), retry limits
+  - [x] Step 1 — Add `service_unavailable` error code to core + build safety infrastructure (circuit-breaker.ts, kill-switch.ts, budget-manager.ts, with-circuit-breaker.ts) → verify: `pnpm typecheck`
+  - [x] Step 2 — Add API safety routes (safety.ts) + update tasks.ts kill endpoint for Redis dual approach + add Redis to server → verify: `pnpm typecheck`
+  - [x] Step 3 — Update CLI api-client + add kill/budget/safety commands + register in index.ts → verify: `pnpm typecheck`
+  - [x] Step 4 — Write all tests (circuit-breaker, kill-switch, budget-manager, with-circuit-breaker, safety-routes, CLI commands) → verify: `pnpm test`
+  - [x] Step 5 — Lint fixes → verify: `pnpm lint`
+  Commit: "feat: add safety controls — circuit breaker, kill switch UX, budget management, CLI commands"
 - [ ] **M20: Reconciliation + Observability** — Periodic GitHub sync, branch lease management, OTel traces/metrics, health endpoints
 - [ ] **M21: End-to-End Testing** — Full workflow tests on test repos, adversarial tests (prompt injection, token expiry, webhook loss)
 

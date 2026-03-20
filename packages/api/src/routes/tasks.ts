@@ -1,4 +1,9 @@
 import { evidenceRepo, taskRepo } from "@software-factory/db";
+import {
+  createKillSwitch,
+  createRedisClient,
+} from "@software-factory/temporal-activities";
+import type { KillSwitch } from "@software-factory/temporal-activities";
 import type { Client } from "@temporalio/client";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
@@ -37,6 +42,20 @@ function getTemporalClient(
 }
 
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
+  // Create a shared kill switch if Redis is available
+  let killSwitch: KillSwitch | null = null;
+  if (app.redisUrl) {
+    const redis = createRedisClient(app.redisUrl);
+    await redis.connect();
+    const pubsub = createRedisClient(app.redisUrl);
+    await pubsub.connect();
+    killSwitch = createKillSwitch(redis, pubsub);
+    app.addHook("onClose", async () => {
+      await redis.quit();
+      await pubsub.quit();
+    });
+  }
+
   // ── Task CRUD ──
 
   app.post(
@@ -271,7 +290,14 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parsed = KillBodySchema.safeParse(request.body ?? {});
+      const reason = parsed.success ? parsed.data.reason : undefined;
 
+      // 1. Set Redis kill flag (instant effect on next activity check)
+      if (killSwitch) {
+        await killSwitch.activateForTask(id, request.actor.actorId, reason);
+      }
+
+      // 2. Send Temporal signal (for the workflow's signal handler)
       const temporalClient = getTemporalClient(app, reply);
       if (!temporalClient) return;
 
@@ -279,7 +305,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         const handle = temporalClient.workflow.getHandle(`task-${id}`);
         await handle.signal("kill", {
           actor: request.actor.actorId,
-          reason: parsed.success ? parsed.data.reason : undefined,
+          reason,
         });
         reply.status(200).send({ status: "killed" });
       } catch (e) {

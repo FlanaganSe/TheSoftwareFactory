@@ -7,8 +7,8 @@ import {
 import { createFactoryError } from "../src/errors/factory-error.js";
 
 describe("error codes", () => {
-  it("defines exactly 10 error codes", () => {
-    expect(ERROR_CODES).toHaveLength(10);
+  it("defines exactly 11 error codes", () => {
+    expect(ERROR_CODES).toHaveLength(11);
   });
 
   it("has a retry policy for every error code", () => {

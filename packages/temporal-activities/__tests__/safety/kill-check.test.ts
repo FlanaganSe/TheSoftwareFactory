@@ -17,7 +17,7 @@ beforeAll(async () => {
   // Redis container is started once by globalSetup and shared via inject()
   // See: __tests__/safety/global-setup.ts
   const redisUrl = inject("redisUrl");
-  redis = new Redis(redisUrl, { lazyConnect: false });
+  redis = new Redis(redisUrl, { lazyConnect: false, db: 0 });
   activities = createKillCheckActivity(redis);
 });
 
@@ -26,7 +26,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await redis.flushall();
+  await redis.flushdb();
 });
 
 describe("checkKillSwitch", () => {

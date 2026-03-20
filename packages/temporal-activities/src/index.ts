@@ -115,6 +115,27 @@ export { createCostCheckActivity } from "./safety/cost-check.js";
 export type { CostCheckResult, CostStatus } from "./safety/cost-check.js";
 export { createBranchLeaseActivity } from "./safety/branch-lease.js";
 export type { LeaseResult } from "./safety/branch-lease.js";
+export { createCircuitBreaker } from "./safety/circuit-breaker.js";
+export type {
+  CircuitState,
+  CircuitBreakerConfig,
+  CircuitBreakerStatus,
+  CircuitBreaker,
+} from "./safety/circuit-breaker.js";
+export { createKillSwitch } from "./safety/kill-switch.js";
+export type {
+  ActiveKill,
+  KillEvent,
+  KillSwitch,
+} from "./safety/kill-switch.js";
+export { createBudgetManager } from "./safety/budget-manager.js";
+export type {
+  TaskCostSummary,
+  TaskCostEntry,
+  DailyCostSummary,
+  BudgetManager,
+} from "./safety/budget-manager.js";
+export { withCircuitBreaker } from "./safety/with-circuit-breaker.js";
 
 // === DB Activities ===
 export { createTaskActivities } from "./db/task-activities.js";
