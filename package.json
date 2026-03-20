@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "build": "pnpm -r run build",
     "clean": "pnpm -r exec -- rm -rf dist *.tsbuildinfo",
-    "worker:dev": "cd packages/worker && npx tsx src/index.ts"
+    "worker:dev": "tsx --env-file=.env packages/worker/src/index.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

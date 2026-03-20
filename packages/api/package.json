@@ -6,7 +6,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "tsx src/app.ts"
+    "dev": "tsx --env-file=../../.env src/app.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

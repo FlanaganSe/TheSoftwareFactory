@@ -6,8 +6,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:generate": "DOTENV_CONFIG_PATH=../../.env drizzle-kit generate",
+    "db:migrate": "DOTENV_CONFIG_PATH=../../.env drizzle-kit migrate"
   },
   "dependencies": {
     "@software-factory/core": "workspace:*",
