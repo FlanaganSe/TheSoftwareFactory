@@ -57,6 +57,8 @@ export type {
   LearnFullResult,
 } from "./phases/learn.js";
 
+export { reconciliationWorkflow } from "./reconciliation.js";
+
 // Signal/Query definitions — for external consumers
 export {
   killSignal,
@@ -135,4 +137,6 @@ export type {
   PostMergeCleanupConfigData,
   LearnActivities,
   TaskMetricsData,
+  BroadReconcilerActivities,
+  ReconciliationReportData,
 } from "./activity-types.js";

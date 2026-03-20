@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import pg from "pg";
 import { apiKeyRoutes } from "../src/routes/api-keys.js";
 import { healthRoutes } from "../src/routes/health.js";
+import { metricsRoutes } from "../src/routes/metrics.js";
 import { setupRoutes } from "../src/routes/setup.js";
 import { taskRoutes } from "../src/routes/tasks.js";
 import { webhookRoutes } from "../src/routes/webhooks.js";
@@ -95,6 +96,7 @@ export async function setupTestApp(): Promise<TestContext> {
   });
 
   await app.register(healthRoutes);
+  await app.register(metricsRoutes);
   await app.register(webhookRoutes);
   await app.register(apiKeyRoutes);
   await app.register(taskRoutes);

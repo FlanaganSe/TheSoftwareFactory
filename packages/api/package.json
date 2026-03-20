@@ -11,12 +11,15 @@
   "dependencies": {
     "@fastify/sensible": "^6.0.4",
     "@octokit/webhooks": "^14.2.0",
+    "@opentelemetry/api": "^1.9.0",
     "@software-factory/core": "workspace:*",
     "@software-factory/db": "workspace:*",
     "@software-factory/temporal-activities": "workspace:*",
+    "@temporalio/client": "1.14.1",
     "fastify": "^5.8.2",
     "fastify-type-provider-zod": "^4.0.2",
-    "@temporalio/client": "1.14.1",
+    "ioredis": "^5.10.0",
+    "prom-client": "^15.1.3",
     "zod": "^3.25.17"
   },
   "devDependencies": {

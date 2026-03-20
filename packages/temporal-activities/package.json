@@ -21,6 +21,7 @@
     "ai": "^6.0.116",
     "diff": "^8.0.3",
     "dockerode": "^4.0.9",
+    "drizzle-orm": "^0.45.1",
     "ioredis": "^5.6.1",
     "js-tiktoken": "^1.0.21",
     "neverthrow": "^8.2.0",

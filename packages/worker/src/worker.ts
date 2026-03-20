@@ -20,7 +20,12 @@ import {
 import { NativeConnection, Worker } from "@temporalio/worker";
 import Docker from "dockerode";
 import type { WorkerConfig } from "./config.js";
-import { ActivityLogInterceptor } from "./interceptors.js";
+import { otelResource } from "./instrumentation.js";
+import {
+  OpenTelemetryActivityInboundInterceptor,
+  makeWorkflowExporter,
+} from "./interceptors.js";
+import { logger } from "./logger.js";
 
 const require = createRequire(import.meta.url);
 
@@ -131,6 +136,18 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       })
     : {};
 
+  // Build OTel workflow exporter sink for V8 sandbox trace bridging.
+  // The Temporal interceptors package pins @opentelemetry/sdk-trace-base@1.x
+  // while our SDK uses 2.x — runtime compatible but types diverge.
+  const { OTLPTraceExporter } = await import(
+    "@opentelemetry/exporter-trace-otlp-grpc"
+  );
+  const otelEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  // biome-ignore lint/suspicious/noExplicitAny: bridge sdk-trace-base 1.x/2.x type mismatch between Temporal interceptors and OTel SDK
+  const spanExporter: any = otelEndpoint
+    ? new OTLPTraceExporter({ url: `${otelEndpoint}/v1/traces` })
+    : undefined;
+
   const worker = await Worker.create({
     connection,
     namespace: config.temporalNamespace,
@@ -146,10 +163,23 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...llmActivities,
       ...evidenceActivities,
     },
+    ...(spanExporter
+      ? {
+          sinks: {
+            exporter: makeWorkflowExporter(spanExporter, otelResource),
+          },
+        }
+      : {}),
     interceptors: {
-      activity: [() => ({ inbound: new ActivityLogInterceptor() })],
+      activity: [
+        (ctx) => ({
+          inbound: new OpenTelemetryActivityInboundInterceptor(ctx),
+        }),
+      ],
     },
   });
+
+  logger.info("Worker created with OTel interceptors");
 
   return worker;
 }

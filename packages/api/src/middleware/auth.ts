@@ -12,6 +12,8 @@ declare module "fastify" {
     dbPool: unknown;
     webhookSecret: string;
     redisUrl?: string;
+    temporalAddress?: string;
+    minioEndpoint?: string;
   }
 }
 

@@ -388,7 +388,13 @@ software-factory/
   - [x] Step 4 — Write all tests (circuit-breaker, kill-switch, budget-manager, with-circuit-breaker, safety-routes, CLI commands) → verify: `pnpm test`
   - [x] Step 5 — Lint fixes → verify: `pnpm lint`
   Commit: "feat: add safety controls — circuit breaker, kill switch UX, budget management, CLI commands"
-- [ ] **M20: Reconciliation + Observability** — Periodic GitHub sync, branch lease management, OTel traces/metrics, health endpoints
+- [x] **M20: Reconciliation + Observability** — Periodic GitHub sync, branch lease management, OTel traces/metrics, health endpoints
+  - [x] Step 1 — OTel SDK setup, Pino logger, custom metrics, Temporal interceptors → verify: `pnpm typecheck`
+  - [x] Step 2 — Enhanced health endpoint, Prometheus /metrics route, API instrumentation → verify: `pnpm typecheck`
+  - [x] Step 3 — Broad GitHub reconciler + reconciliation workflow + Docker Compose observability → verify: `pnpm typecheck`
+  - [x] Step 4 — All tests (metrics, logger, reconciler, health, metrics-endpoint) → verify: `pnpm test`
+  - [x] Step 5 — Lint fixes → verify: `pnpm lint`
+  Commit: "feat: add reconciliation + observability — OTel, custom metrics, Prometheus, health checks, GitHub reconciler"
 - [ ] **M21: End-to-End Testing** — Full workflow tests on test repos, adversarial tests (prompt injection, token expiry, webhook loss)
 
 ### Phase 6: Dashboard — *"Visual control surface"* (Phase 2 scope)

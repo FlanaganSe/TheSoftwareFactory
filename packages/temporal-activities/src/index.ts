@@ -97,6 +97,15 @@ export type {
   PostMergeCleanupConfig,
 } from "./github/merge.js";
 export { createReviewTrackerActivities } from "./github/review-tracker.js";
+export {
+  createBroadReconciler,
+  createBroadReconcilerActivities,
+} from "./github/reconciler.js";
+export type {
+  BroadReconcilerConfig,
+  ReconciliationReport,
+  PRDriftResult,
+} from "./github/reconciler.js";
 export type {
   ReconcilerConfig,
   ReconcileCheck,

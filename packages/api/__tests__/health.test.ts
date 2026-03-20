@@ -17,7 +17,7 @@ describe("health endpoints", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.status).toBe("ok");
-    expect(body.version).toBe("0.0.0");
+    expect(body.version).toBe("0.1.0");
   });
 
   it("GET /health/live always returns 200", async () => {
@@ -26,10 +26,48 @@ describe("health endpoints", () => {
     expect(res.json().status).toBe("ok");
   });
 
-  it("GET /health/ready returns 200 when DB is healthy", async () => {
+  it("GET /health/ready includes all dependency checks", async () => {
     const res = await ctx.app.inject({ method: "GET", url: "/health/ready" });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().status).toBe("ok");
-    expect(res.json().checks.database.status).toBe("healthy");
+    const body = res.json();
+
+    // DB is healthy (Testcontainers Postgres is running)
+    expect(body.checks.database).toBeDefined();
+    expect(body.checks.database.status).toBe("healthy");
+
+    // Redis, Temporal, MinIO are not configured in test — should be unhealthy
+    expect(body.checks.redis).toBeDefined();
+    expect(body.checks.redis.status).toBe("unhealthy");
+    expect(body.checks.temporal).toBeDefined();
+    expect(body.checks.temporal.status).toBe("unhealthy");
+    expect(body.checks.minio).toBeDefined();
+    expect(body.checks.minio.status).toBe("unhealthy");
+  });
+
+  it("GET /health/ready returns 503 when dependencies are down", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/health/ready" });
+    // Redis/Temporal/MinIO are not configured → at least one unhealthy → 503
+    expect(res.statusCode).toBe(503);
+    const body = res.json();
+    expect(body.status).toBe("degraded");
+  });
+
+  it("GET /health/ready returns version in response", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/health/ready" });
+    const body = res.json();
+    expect(body.version).toBe("0.1.0");
+  });
+
+  it("GET /health/ready has latency info for healthy services", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/health/ready" });
+    const body = res.json();
+    // DB is healthy and should have latency
+    expect(typeof body.checks.database.latencyMs).toBe("number");
+  });
+
+  it("GET /health/ready has error info for unhealthy services", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/health/ready" });
+    const body = res.json();
+    // Redis is unhealthy and should have an error message
+    expect(typeof body.checks.redis.error).toBe("string");
   });
 });

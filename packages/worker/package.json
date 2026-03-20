@@ -6,11 +6,22 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.71.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.213.0",
+    "@opentelemetry/exporter-prometheus": "^0.213.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.213.0",
+    "@opentelemetry/resources": "^2.6.0",
+    "@opentelemetry/sdk-metrics": "^2.6.0",
+    "@opentelemetry/sdk-node": "^0.213.0",
+    "@opentelemetry/sdk-trace-node": "^2.6.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "@software-factory/core": "workspace:*",
     "@software-factory/db": "workspace:*",
     "@software-factory/temporal-activities": "workspace:*",
     "@software-factory/temporal-workflows": "workspace:*",
     "@temporalio/client": "1.14.1",
+    "@temporalio/interceptors-opentelemetry": "1.14.1",
     "@temporalio/worker": "1.14.1",
     "dockerode": "^4.0.9",
     "pino": "^9.7.0"

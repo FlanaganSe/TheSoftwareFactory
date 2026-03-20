@@ -2,6 +2,7 @@ import { createDb } from "@software-factory/db";
 import { seedAdminKey } from "./bootstrap/seed-admin-key.js";
 import { apiKeyRoutes } from "./routes/api-keys.js";
 import { healthRoutes } from "./routes/health.js";
+import { metricsRoutes } from "./routes/metrics.js";
 import { setupRoutes } from "./routes/setup.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -28,6 +29,7 @@ export async function startApp(config: AppConfig): Promise<void> {
 
   // Register routes
   await server.register(healthRoutes);
+  await server.register(metricsRoutes);
   await server.register(webhookRoutes);
   await server.register(apiKeyRoutes);
   await server.register(taskRoutes);

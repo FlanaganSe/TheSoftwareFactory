@@ -1,23 +1,23 @@
 import { loadWorkerConfig } from "./config.js";
+import { logger } from "./logger.js";
 import { createWorker } from "./worker.js";
 
 async function main(): Promise<void> {
   const config = loadWorkerConfig();
 
-  console.log(
-    JSON.stringify({
-      level: "info",
-      msg: "Starting worker",
+  logger.info(
+    {
       temporalAddress: config.temporalAddress,
       namespace: config.temporalNamespace,
-    }),
+    },
+    "Starting worker",
   );
 
   const worker = await createWorker(config);
 
   // Graceful shutdown
   const shutdown = async () => {
-    console.log(JSON.stringify({ level: "info", msg: "Shutting down worker" }));
+    logger.info("Shutting down worker");
     worker.shutdown();
   };
 
@@ -25,16 +25,13 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
 
   await worker.run();
-  console.log(JSON.stringify({ level: "info", msg: "Worker stopped" }));
+  logger.info("Worker stopped");
 }
 
 main().catch((err: unknown) => {
-  console.error(
-    JSON.stringify({
-      level: "fatal",
-      msg: "Worker failed to start",
-      error: err instanceof Error ? err.message : String(err),
-    }),
+  logger.fatal(
+    { error: err instanceof Error ? err.message : String(err) },
+    "Worker failed to start",
   );
   process.exit(1);
 });

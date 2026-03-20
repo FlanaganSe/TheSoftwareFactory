@@ -1,44 +1,14 @@
-import type {
-  ActivityExecuteInput,
-  ActivityInboundCallsInterceptor,
-  Next,
-} from "@temporalio/worker";
-
 /**
- * Activity interceptor that logs activity starts, completions, and failures
- * using structured logging. OTel correlation deferred to M20.
+ * Temporal OTel interceptors for activity span tracing.
+ *
+ * The V8 sandbox blocks standard OTel in workflow code.
+ * Temporal's OTel integration uses a sinks mechanism to bridge the gap:
+ * - makeWorkflowExporter: extracts trace context from V8 sandbox via sinks
+ * - OpenTelemetryActivityInboundInterceptor: wraps activity execution in OTel spans
+ * - OpenTelemetryWorkflowClientInterceptor: propagates trace context on workflow start/signal
  */
-export class ActivityLogInterceptor implements ActivityInboundCallsInterceptor {
-  async execute(
-    input: ActivityExecuteInput,
-    next: Next<ActivityInboundCallsInterceptor, "execute">,
-  ): Promise<unknown> {
-    const activityName = input.headers?.["activity-name"] ?? "unknown";
-    const startMs = Date.now();
-    try {
-      const result = await next(input);
-      const durationMs = Date.now() - startMs;
-      console.log(
-        JSON.stringify({
-          level: "info",
-          msg: "activity_completed",
-          activity: activityName,
-          durationMs,
-        }),
-      );
-      return result;
-    } catch (error: unknown) {
-      const durationMs = Date.now() - startMs;
-      console.log(
-        JSON.stringify({
-          level: "error",
-          msg: "activity_failed",
-          activity: activityName,
-          durationMs,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      throw error;
-    }
-  }
-}
+
+export {
+  OpenTelemetryActivityInboundInterceptor,
+  makeWorkflowExporter,
+} from "@temporalio/interceptors-opentelemetry";

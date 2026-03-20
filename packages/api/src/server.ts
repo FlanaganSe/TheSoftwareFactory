@@ -14,6 +14,8 @@ export interface ServerOptions {
   readonly dbConnection: DbConnection;
   readonly webhookSecret: string;
   readonly redisUrl?: string;
+  readonly temporalAddress?: string;
+  readonly minioEndpoint?: string;
 }
 
 export function createServer(options: ServerOptions): FastifyInstance {
@@ -35,6 +37,8 @@ export function createServer(options: ServerOptions): FastifyInstance {
   app.decorate("dbPool", options.dbConnection.pool);
   app.decorate("webhookSecret", options.webhookSecret);
   app.decorate("redisUrl", options.redisUrl);
+  app.decorate("temporalAddress", options.temporalAddress);
+  app.decorate("minioEndpoint", options.minioEndpoint);
 
   return app;
 }

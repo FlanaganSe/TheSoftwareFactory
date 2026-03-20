@@ -813,3 +813,19 @@ export interface TaskMetricsData {
 export interface LearnActivities {
   recordTaskMetrics(taskId: string, metrics: TaskMetricsData): Promise<void>;
 }
+
+// ─── Broad Reconciler Activities (M20) ───
+
+export interface ReconciliationReportData {
+  readonly activePRsChecked: number;
+  readonly staleDetected: number;
+  readonly driftDetected: number;
+  readonly signalsSent: number;
+  readonly errors: readonly string[];
+  readonly durationMs: number;
+}
+
+export interface BroadReconcilerActivities {
+  reconcileAllResources(): Promise<ReconciliationReportData>;
+  reconcileActivePRs(): Promise<Partial<ReconciliationReportData>>;
+}
