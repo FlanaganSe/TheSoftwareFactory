@@ -94,7 +94,7 @@ function makeMockActivities(overrides: Record<string, unknown> = {}) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }),
-    getTask: async () => ({ id: "t1", state: "assigned" }),
+    getTask: async () => ({ id: "t1", state: "created" }),
     listActiveTasks: async () => [],
     insertAuditEntry: async () => {},
     checkKillSwitch: async () => ({ killed: false, scope: "none" as const }),

@@ -1,7 +1,7 @@
 /**
  * Intake phase — first child workflow.
- * Validates task input, creates task in DB, transitions to assigned,
- * and captures a stub TrustedBaseContext (full implementation in M12).
+ * Validates existing task, transitions to assigned,
+ * and captures a stub TrustedBaseContext (full implementation in M4).
  */
 
 import type { TaskState } from "@software-factory/core";
@@ -43,15 +43,10 @@ export async function intakePhase(input: IntakeInput): Promise<IntakeResult> {
     );
   }
 
-  // Create task in DB (state: 'created')
-  const task = await taskActivities.createTask({
-    objective: input.objective,
-    repoId: input.repoId,
-    createdBy: input.createdBy,
-    autonomyLevel: input.autonomyLevel,
-  });
+  // Load the existing task (created at the API boundary)
+  const task = await taskActivities.getTask(input.taskId);
 
-  // Stub TrustedBaseContext — full implementation in M12
+  // Stub TrustedBaseContext — full implementation in M4
   const baseSha = "stub-base-sha";
 
   // Check if clarification is needed (created → needs_clarification)

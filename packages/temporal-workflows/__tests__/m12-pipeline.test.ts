@@ -70,7 +70,7 @@ function createMockActivities(overrides: Record<string, unknown> = {}) {
       ...mockTaskRecord,
       state: newState,
     }),
-    getTask: async () => ({ id: "t1", state: "assigned" }),
+    getTask: async () => ({ id: "t1", state: "created" }),
     listActiveTasks: async () => [],
     checkKillSwitch: async () => ({ killed: false, scope: "none" as const }),
     checkCostBudget: async () => ({

@@ -62,8 +62,11 @@ describe("E2E: Happy Path — Submit Task → Merge", () => {
     expect(progress.attemptNumber).toBe(1);
     expect(progress.startedAt).toBeTruthy();
 
-    // 6. Verify mock state — task was created
-    expect(env.mockState.tasksCreated.length).toBeGreaterThanOrEqual(1);
+    // 6. Verify intake transitioned the task to assigned
+    const assignedTransitions = env.mockState.stateTransitions.filter(
+      (t) => t.newState === "assigned",
+    );
+    expect(assignedTransitions.length).toBeGreaterThanOrEqual(1);
 
     // 7. Verify audit entries were recorded
     expect(env.mockState.auditEntries.length).toBeGreaterThanOrEqual(1);

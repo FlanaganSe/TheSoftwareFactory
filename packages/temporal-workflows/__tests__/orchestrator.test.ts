@@ -91,7 +91,7 @@ const mockActivities = {
     ...mockTaskRecord,
     state: newState,
   }),
-  getTask: async () => ({ id: "t1", state: "assigned" }),
+  getTask: async () => ({ id: "t1", state: "created" }),
   listActiveTasks: async () => [],
   insertAuditEntry: async () => {},
   // Safety activities

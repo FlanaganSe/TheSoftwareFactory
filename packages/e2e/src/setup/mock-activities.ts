@@ -233,7 +233,7 @@ export function createMockActivities(opts: MockActivityOptions) {
     async getTask(taskId: string): Promise<TaskRecord> {
       return {
         id: taskId,
-        state: "assigned" as const,
+        state: "created" as const,
         objective: "test",
         repoId: "repo-e2e",
         createdBy: "system",
