@@ -70,12 +70,16 @@ None. All changes are modifications to existing files following established patt
 
 ### Phase B: Unblock Real Execution
 
-- [ ] **M3: Remove patched() gates** — Delete all `patched()` conditionals and stub `else` branches from the orchestrator. Keep only the real implementation code. Safe because there are zero running production workflows.
+- [x] **M3: Remove patched() gates** — Delete all `patched()` conditionals and stub `else` branches from the orchestrator. Keep only the real implementation code. Safe because there are zero running production workflows.
   - [x] Step 1 — Remove all 11 patched() gates (understand, plan, setup, implement, validate, evidence, pr_creation, pr_tracking, merge, learn, cleanup) + remove `patched` import
   - [x] Step 2 — Run `pnpm run lint:fix` to fix indentation after mechanical removal
   - [x] Step 3 — Verify: typecheck clean, 1002 tests pass (8 pre-existing MinIO failures), all 15 E2E tests pass
   Commit: "fix: remove patched() version gates from orchestrator"
 - [ ] **M4: Add clone step + fix repo identity in understand phase** — Call `githubActivities.cloneRepo(repoOwner, repoName, repoPath)` before indexing. Delete `deterministicRepoUUID` from capability-scan.ts. The orchestrator already carries `input.repoId` (now a real DB UUID) — all downstream consumers (pr_creation, pr_tracking, evidence) use `input.repoId`, not `snapshot.repoId`. The `scanRepository` function signature stays unchanged; `fetchRepoMetadata` will use a placeholder for the vestigial field.
+  - [ ] Step 1 — Add `cloneRepo` call to understand.ts between state transition and scan; use `cloneResult.headSha` for indexing → verify: `pnpm run typecheck`
+  - [ ] Step 2 — Delete `deterministicRepoUUID` from capability-scan.ts, replace with `crypto.randomUUID()` → verify: `pnpm run typecheck`
+  - [ ] Step 3 — Add `cloneRepo` mock to understand-phase.test.ts → verify: `pnpm run test && pnpm run test:e2e`
+  Commit: "fix: add clone step to understand phase and remove dual repo identity"
 
 ### Phase C: Wire Missing Components
 

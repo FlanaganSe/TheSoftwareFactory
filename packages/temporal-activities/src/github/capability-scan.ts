@@ -237,9 +237,9 @@ async function fetchRepoMetadata(
     visibility = "public";
   }
 
-  // Derive a stable UUID v5 from the GitHub repo numeric ID.
-  // Uses a fixed namespace so the same repo always produces the same UUID.
-  const repoId = deterministicRepoUUID(data.id);
+  // Placeholder — the real repo identity is the DB-generated UUID passed via workflow input.
+  // This field satisfies the CapabilitySnapshot schema but is not used downstream.
+  const repoId = crypto.randomUUID();
 
   return ok({
     repoId,
@@ -619,17 +619,4 @@ function isNotFound(error: unknown): boolean {
     "status" in error &&
     (error as { status: number }).status === 404
   );
-}
-
-/**
- * Generate a deterministic UUID from a GitHub repo numeric ID.
- * Uses UUID v5 algorithm with a fixed namespace so the same repo
- * always produces the same UUID across scans.
- */
-function deterministicRepoUUID(githubRepoId: number): string {
-  // Fixed namespace UUID for software-factory repo IDs
-  // Generated once, never changes: uuid v4 "6ba7b810-9dad-41d4-8009-factory000000"
-  // We use a simple deterministic approach: pad the numeric ID into a UUID format
-  const hex = githubRepoId.toString(16).padStart(12, "0");
-  return `00000000-0000-5000-a000-${hex}`;
 }

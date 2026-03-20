@@ -82,28 +82,35 @@ export async function understandPhase(
     { phase: "understand", action: "start" },
   );
 
-  // Step 3: Run capability scan (needed to discover defaultBranch)
+  // Step 3: Clone the repository to the local filesystem
+  const cloneResult = await githubActivities.cloneRepo(
+    input.repoOwner,
+    input.repoName,
+    input.repoPath,
+  );
+
+  // Step 4: Run capability scan (needed to discover defaultBranch)
   const capabilitySnapshot = await githubActivities.scanRepository(
     input.repoOwner,
     input.repoName,
   );
 
-  // Step 4: Capture TrustedBaseContext using the real default branch
+  // Step 5: Capture TrustedBaseContext using the real default branch
   const trustedContext = await githubActivities.captureTrustedContext(
     input.repoOwner,
     input.repoName,
     capabilitySnapshot.defaultBranch,
   );
 
-  // Step 5: Run code indexing (produces repo map as part of result)
+  // Step 6: Run code indexing (produces repo map as part of result)
   const indexResult = await indexActivities.indexRepositoryActivity(
     input.repoPath,
-    input.baseSha,
+    cloneResult.headSha,
     input.repoId,
     [],
   );
 
-  // Step 6: Identify relevant files (top-ranked from repo map)
+  // Step 7: Identify relevant files (top-ranked from repo map)
   const TOP_N = 20;
   const sortedMap = [...indexResult.repoMap].sort((a, b) => b.rank - a.rank);
   const relevantFiles = sortedMap.slice(0, TOP_N).map((e) => e.filePath);

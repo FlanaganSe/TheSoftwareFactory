@@ -93,6 +93,10 @@ const mockActivities = {
     ...mockTaskRecord,
     state: newState,
   }),
+  cloneRepo: async (_owner: string, _repo: string, targetPath: string) => ({
+    path: targetPath,
+    headSha: "abc123",
+  }),
   captureTrustedContext: async () => mockTrustedContext,
   scanRepository: async () => mockCapabilitySnapshot,
   indexRepositoryActivity: async () => mockIndexResult,
