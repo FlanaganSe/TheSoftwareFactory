@@ -93,11 +93,11 @@ None. All changes are modifications to existing files following established patt
 
 ### Phase D: Tests and Docs
 
-- [ ] **M6+M7: Submission path tests + README fix** — Direct DB-level integration tests for getOrCreateRepo+createTask+listActiveTasks path. Fix README "Using Software Factory" section.
-  - [ ] Step 1 — Create `packages/api/__tests__/submission-path.test.ts` with 4 tests: (a) getOrCreateRepo creates repo, (b) createTask creates task with correct FK, (c) upsert: same repo slug → one repo row, (d) GET /api/tasks returns created task → verify: `pnpm --filter @software-factory/api run test`
-  - [ ] Step 2 — Replace README "Using Software Factory" section (lines 148-198) with accurate docs → verify: `pnpm run lint`
-  - [ ] Step 3 — Full verification → verify: `pnpm run typecheck && pnpm run test`
-  Commit: "test: add submission path integration tests and fix README docs"
+- [x] **M6+M7: Submission path tests + README fix** — Direct DB-level integration tests for getOrCreateRepo+createTask+listActiveTasks path. Fix README "Using Software Factory" section.
+  - [x] Step 1 — Create `packages/api/__tests__/submission-path.test.ts` with 4 tests
+  - [x] Step 2 — Replace README "Using Software Factory" section with accurate docs
+  - [x] Step 3 — Full verification: typecheck clean, lint clean, 1009 tests pass, 15 E2E pass
+  Commit: 5db82e8 "test: add submission path integration tests and fix README docs"
 
 ---
 
