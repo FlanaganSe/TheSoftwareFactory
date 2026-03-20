@@ -12,7 +12,7 @@ You are a research agent. Your job is to investigate the codebase, read document
 - Cite specific files and line numbers
 
 ## Process
-1. Read the PRD at `.claude/plans/prd.md`
+1. Read the PRD at `docs/prd.md`
 2. Investigate the codebase for relevant patterns, dependencies, and constraints
 3. Search for prior art, related code, and potential conflicts
 4. Write structured findings to `.claude/plans/research.md`

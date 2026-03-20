@@ -1,0 +1,246 @@
+// Software Factory — LikeC4 Architecture Model
+// Source of truth: codebase at 2026-03-19
+
+specification {
+  element actor {
+    style {
+      shape person
+      color amber
+    }
+  }
+  element system {
+    style {
+      shape rectangle
+      color slate
+    }
+  }
+  element component {
+    style {
+      shape rectangle
+      color indigo
+    }
+  }
+  element datastore {
+    style {
+      shape cylinder
+      color green
+    }
+  }
+  element queue {
+    style {
+      shape queue
+      color sky
+    }
+  }
+  element external {
+    style {
+      shape rectangle
+      color muted
+    }
+  }
+}
+
+model {
+
+  // ── Actors ──────────────────────────────────────────────
+  operator = actor 'Operator' {
+    description 'Human who submits tasks, reviews evidence, and approves/rejects PRs'
+  }
+
+  // ── External Systems ───────────────────────────────────
+  github = external 'GitHub' {
+    description 'Source control, pull requests, webhooks, CODEOWNERS'
+  }
+
+  openrouter = external 'OpenRouter' {
+    description 'LLM inference gateway (multi-provider)'
+  }
+
+  // ── Software Factory (the product) ─────────────────────
+  factory = system 'Software Factory' {
+    description 'Self-hosted control plane that transforms GitHub issues into validated pull requests using AI agents with human oversight'
+
+    // ── Application Services ────────────────────────────
+    api = component 'API Server' {
+      description 'Fastify HTTP server — task CRUD, webhook intake, signal dispatch, evidence retrieval, RBAC auth'
+      technology 'Fastify + Zod'
+    }
+
+    worker = component 'Temporal Worker' {
+      description 'Executes workflow activities — GitHub ops, sandbox execution, LLM calls, evidence generation, safety checks'
+      technology 'Node.js + @temporalio/worker'
+    }
+
+    cli = component 'CLI' {
+      description 'Operator command-line tool — status, evidence display, approve/reject/request-changes'
+      technology 'Commander.js + chalk + ora'
+    }
+
+    // ── Orchestration ───────────────────────────────────
+    temporal = component 'Temporal Server' {
+      description 'Durable workflow orchestration — 12-phase pipeline with signals, queries, and continue-as-new'
+      technology 'Temporal (self-hosted)'
+    }
+
+    temporalUi = component 'Temporal UI' {
+      description 'Web dashboard for workflow debugging and inspection'
+      technology 'temporalio/ui'
+    }
+
+    // ── Domain Libraries (not deployed separately) ──────
+    core = component 'Core Library' {
+      description 'Pure TypeScript domain model — Zod schemas, state machine, policy engine, error types (V8 isolate safe)'
+      technology 'TypeScript (no Node.js APIs)'
+    }
+
+    workflows = component 'Workflow Definitions' {
+      description '12 phase workflows — orchestrator, intake, understand, plan, setup, implement, validate, evidence, review, PR creation/tracking, learn'
+      technology '@temporalio/workflow (V8 isolate)'
+    }
+
+    activities = component 'Activity Implementations' {
+      description 'Side-effect activities — GitHub, sandbox, LLM, indexing, validation, evidence, safety, DB'
+      technology 'Node.js + Octokit + dockerode + AI SDK'
+    }
+
+    // ── Sandbox ─────────────────────────────────────────
+    sandbox = component 'Docker Sandbox' {
+      description 'Isolated container for code execution — no network, resource-limited, phase-scoped credentials'
+      technology 'Docker (--net=none)'
+    }
+
+    // ── Data Stores ─────────────────────────────────────
+    postgres = datastore 'PostgreSQL' {
+      description 'System of record — tasks, evidence bundles, audit entries, credentials, policy configs, API keys'
+      technology 'PostgreSQL 16 (Drizzle ORM)'
+    }
+
+    redis = datastore 'Redis' {
+      description 'Safety infrastructure — kill switch, cost budget checks, branch leases, caching'
+      technology 'Redis 7'
+    }
+
+    minio = datastore 'MinIO' {
+      description 'S3-compatible artifact storage — raw diffs, SARIF reports, SBOMs, test logs'
+      technology 'MinIO (S3 API)'
+    }
+  }
+
+  // ── Relationships ──────────────────────────────────────
+
+  // Operator interactions
+  operator -> factory.cli 'Runs commands'
+  operator -> factory.temporalUi 'Inspects workflows' {
+    technology 'HTTPS :8080'
+  }
+
+  // CLI → API (CLI never talks to Temporal or DB directly)
+  factory.cli -> factory.api 'REST calls (tasks, evidence, signals)' {
+    technology 'HTTPS :3000'
+  }
+
+  // API → infrastructure
+  factory.api -> factory.temporal 'Start workflows, send signals, run queries' {
+    technology 'gRPC :7233'
+  }
+  factory.api -> factory.postgres 'Task CRUD, evidence retrieval, auth, audit' {
+    technology 'SQL :5432'
+  }
+
+  // Temporal → Worker
+  factory.temporal -> factory.worker 'Dispatches activity tasks' {
+    technology 'gRPC (sf-orchestration queue)'
+  }
+
+  // Worker activity dependencies
+  factory.worker -> factory.postgres 'State transitions, audit entries, evidence persistence' {
+    technology 'SQL :5432'
+  }
+  factory.worker -> factory.redis 'Kill switch, cost checks, branch leases' {
+    technology 'Redis :6379'
+  }
+  factory.worker -> factory.minio 'Upload/download artifacts' {
+    technology 'S3 API :9000'
+  }
+  factory.worker -> factory.sandbox 'Provision, execute, destroy containers' {
+    technology 'Docker API'
+  }
+  factory.worker -> github 'Branches, PRs, file content, capability scanning' {
+    technology 'HTTPS (Octokit)'
+  }
+  factory.worker -> openrouter 'LLM inference (plan, implement phases)' {
+    technology 'HTTPS (AI SDK)'
+  }
+
+  // Temporal UI
+  factory.temporalUi -> factory.temporal 'Query workflow state' {
+    technology 'gRPC :7233'
+  }
+
+  // Temporal server uses shared PostgreSQL
+  factory.temporal -> factory.postgres 'Workflow history, visibility' {
+    technology 'SQL :5432 (temporal, temporal_visibility DBs)'
+  }
+
+  // GitHub → API (inbound webhooks)
+  github -> factory.api 'Webhook events (issues, PRs, checks)' {
+    technology 'HTTPS (POST /webhooks/github)'
+  }
+
+  // Library dependencies (compile-time, not runtime connections)
+  factory.workflows -> factory.core 'Imports domain types, schemas, state machine'
+  factory.activities -> factory.core 'Imports domain types, error codes'
+  factory.worker -> factory.workflows 'Loads workflow bundle into V8 isolate'
+  factory.worker -> factory.activities 'Registers activity implementations'
+}
+
+views {
+
+  view index {
+    title 'Software Factory — Landscape'
+    include *
+  }
+
+  view of factory {
+    title 'Software Factory — Internal Architecture'
+    include *
+  }
+
+  dynamic view taskFlow {
+    title 'Task Lifecycle — Issue to Merged PR'
+
+    // 1. Operator submits task
+    operator -> factory.cli 'factory submit --repo owner/name --objective "..."'
+    factory.cli -> factory.api 'POST /api/tasks'
+    factory.api -> factory.temporal 'startWorkflow(taskOrchestrator)'
+
+    // 2. Temporal orchestrates phases (worker executes)
+    factory.temporal -> factory.worker 'Dispatch: intake, understand, plan, setup'
+    factory.worker -> github 'Clone repo, scan capabilities, load CODEOWNERS'
+    factory.worker -> factory.postgres 'Create task, persist state transitions'
+
+    // 3. Implement phase
+    factory.temporal -> factory.worker 'Dispatch: implement'
+    factory.worker -> factory.sandbox 'Provision sandbox (--net=none)'
+    factory.worker -> openrouter 'LLM agent generates code'
+    factory.worker -> factory.sandbox 'Execute code changes in sandbox'
+
+    // 4. Validate + Evidence
+    factory.temporal -> factory.worker 'Dispatch: validate, evidence'
+    factory.worker -> factory.sandbox 'Run tests, lint, security scan'
+    factory.worker -> factory.minio 'Upload raw artifacts (diff, SARIF)'
+    factory.worker -> factory.postgres 'Persist evidence bundle'
+
+    // 5. Human review
+    operator -> factory.cli 'factory review --task <id>'
+    factory.cli -> factory.api 'GET /api/tasks/:id/evidence'
+    factory.api -> factory.postgres 'Retrieve evidence bundle'
+    operator -> factory.cli 'factory approve --task <id>'
+    factory.cli -> factory.api 'POST /api/tasks/:id/approve'
+    factory.api -> factory.temporal 'signal: approve'
+
+    // 6. PR creation + merge
+    factory.temporal -> factory.worker 'Dispatch: pr_creation, pr_tracking'
+    factory.worker -> github 'Create PR, monitor checks, merge'
+  }
+}

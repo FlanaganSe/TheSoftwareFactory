@@ -4,8 +4,26 @@ An exploratory project to build a secure, modern software factory workflow — s
 
 ## Commands
 ```bash
-# TBD — stack not yet chosen
-# Commands will be defined once technology decisions are made
+# Install dependencies
+pnpm install
+
+# Start infrastructure (Postgres, Redis, Temporal, MinIO)
+docker compose up -d
+
+# Run database migrations
+pnpm --filter @software-factory/db run db:migrate
+
+# Type-check all packages
+pnpm run typecheck
+
+# Run tests
+pnpm run test
+
+# Start Temporal worker (dev)
+pnpm run worker:dev
+
+# Start API server (dev)
+pnpm --filter @software-factory/api run dev
 ```
 
 ## Rules
@@ -15,8 +33,6 @@ An exploratory project to build a secure, modern software factory workflow — s
 @.claude/rules/stack.md
 
 ## System
-<!-- Uncomment when SYSTEM.md has real content: -->
-<!-- @docs/SYSTEM.md -->
 
 ## Decisions
 See `docs/decisions.md` — append-only ADR log. Read during planning, not loaded every session.
