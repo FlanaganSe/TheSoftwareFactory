@@ -94,6 +94,7 @@ describe("role authorization", () => {
       url: "/api/tasks",
       headers: { authorization: `Bearer ${viewerKey}` },
     });
-    expect(res.statusCode).toBe(503); // Temporal not configured, not 403
+    // GET /api/tasks reads from DB, not Temporal — 200 means auth+role passed
+    expect(res.statusCode).toBe(200);
   });
 });

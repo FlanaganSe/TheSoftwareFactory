@@ -80,6 +80,28 @@ export async function getRepoBySlug(
   }
 }
 
+export async function getOrCreateRepo(
+  db: DbInstance,
+  owner: string,
+  repo: string,
+): Promise<FactoryResult<Repo>> {
+  const existing = await getRepoBySlug(db, owner, repo);
+  if (existing.isOk()) return existing;
+
+  const created = await createRepo(db, {
+    githubOwner: owner,
+    githubRepo: repo,
+  });
+  if (created.isOk()) return created;
+
+  // Creation failed — likely a unique constraint race from concurrent submission.
+  // Retry the lookup.
+  const retried = await getRepoBySlug(db, owner, repo);
+  if (retried.isOk()) return retried;
+
+  return created;
+}
+
 export async function listRepos(
   db: DbInstance,
 ): Promise<FactoryResult<Repo[]>> {

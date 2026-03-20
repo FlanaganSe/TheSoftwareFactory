@@ -1,4 +1,4 @@
-import { evidenceRepo, taskRepo } from "@software-factory/db";
+import { evidenceRepo, repoRepo, taskRepo } from "@software-factory/db";
 import {
   createKillSwitch,
   createRedisClient,
@@ -76,9 +76,43 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       if (!temporalClient) return;
 
       const { objective, repoOwner, repoName, autonomyLevel } = parsed.data;
-      const taskId = crypto.randomUUID();
-      const repoId = crypto.randomUUID();
-      const workflowId = `task-${taskId}`;
+
+      // Resolve or create the repo row (FK must exist before task INSERT)
+      const repoResult = await repoRepo.getOrCreateRepo(
+        app.db,
+        repoOwner,
+        repoName,
+      );
+      if (repoResult.isErr()) {
+        reply.status(500).send({
+          error: {
+            code: "internal_error",
+            message: repoResult.error.message,
+          },
+        });
+        return;
+      }
+      const repo = repoResult.value;
+
+      // Create the task row in Postgres
+      const taskResult = await taskRepo.createTask(app.db, {
+        objective,
+        repoId: repo.id,
+        autonomyLevel,
+        createdBy: request.actor.actorId,
+      });
+      if (taskResult.isErr()) {
+        reply.status(500).send({
+          error: {
+            code: "internal_error",
+            message: taskResult.error.message,
+          },
+        });
+        return;
+      }
+      const task = taskResult.value;
+
+      const workflowId = `task-${task.id}`;
 
       try {
         await temporalClient.workflow.start("taskOrchestrator", {
@@ -86,8 +120,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
           workflowId,
           args: [
             {
-              taskId,
-              repoId,
+              taskId: task.id,
+              repoId: repo.id,
               repoOwner,
               repoName,
               objective,
@@ -102,9 +136,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         });
 
         reply.status(201).send({
-          taskId,
+          taskId: task.id,
+          repoId: repo.id,
           workflowId,
-          status: "started",
+          status: "created",
         });
       } catch (error) {
         reply.status(500).send({

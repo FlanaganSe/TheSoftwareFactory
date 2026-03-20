@@ -70,8 +70,8 @@ describe("auth middleware", () => {
       url: "/api/tasks",
       headers: { authorization: `Bearer ${adminKey}` },
     });
-    // 503 = Temporal not configured, but NOT 401 (auth passed)
-    expect(res.statusCode).toBe(503);
+    // GET /api/tasks reads from DB, not Temporal — 200 means auth passed
+    expect(res.statusCode).toBe(200);
   });
 
   it("request with valid operator key → passes", async () => {
@@ -80,7 +80,7 @@ describe("auth middleware", () => {
       url: "/api/tasks",
       headers: { authorization: `Bearer ${operatorKey}` },
     });
-    expect(res.statusCode).toBe(503);
+    expect(res.statusCode).toBe(200);
   });
 
   it("request with valid viewer key → passes", async () => {
@@ -89,7 +89,7 @@ describe("auth middleware", () => {
       url: "/api/tasks",
       headers: { authorization: `Bearer ${viewerKey}` },
     });
-    expect(res.statusCode).toBe(503);
+    expect(res.statusCode).toBe(200);
   });
 
   it("request with expired API key → 401", async () => {

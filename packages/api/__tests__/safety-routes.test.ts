@@ -77,13 +77,7 @@ beforeAll(async () => {
   for (const stmt of MIGRATION_2.split("--> statement-breakpoint")) {
     const trimmed = stmt.trim();
     if (!trimmed) continue;
-    const fixed = trimmed.includes("SET DATA TYPE integer")
-      ? trimmed.replace(
-          "SET DATA TYPE integer",
-          "SET DATA TYPE integer USING schema_version::integer",
-        )
-      : trimmed;
-    await setupPool.query(fixed);
+    await setupPool.query(trimmed);
   }
   await setupPool.end();
 

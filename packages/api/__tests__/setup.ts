@@ -69,18 +69,10 @@ export async function setupTestApp(): Promise<TestContext> {
     }
   }
   await setupPool.query(MIGRATION_1);
-  // Migration 0002 has an ALTER TYPE that needs USING clause
   for (const stmt of MIGRATION_2.split("--> statement-breakpoint")) {
     const trimmed = stmt.trim();
     if (!trimmed) continue;
-    // Fix: Postgres can't auto-cast text→integer; add USING clause
-    const fixed = trimmed.includes("SET DATA TYPE integer")
-      ? trimmed.replace(
-          "SET DATA TYPE integer",
-          "SET DATA TYPE integer USING schema_version::integer",
-        )
-      : trimmed;
-    await setupPool.query(fixed);
+    await setupPool.query(trimmed);
   }
   await setupPool.end();
 

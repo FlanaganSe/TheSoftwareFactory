@@ -86,7 +86,7 @@ describe("API key management", () => {
       url: "/api/tasks",
       headers: { authorization: `Bearer ${key}` },
     });
-    expect(beforeRes.statusCode).toBe(503); // Temporal not configured, not 401
+    expect(beforeRes.statusCode).toBe(200); // GET /api/tasks reads from DB — 200 means key works
 
     // Revoke
     const revokeRes = await ctx.app.inject({
