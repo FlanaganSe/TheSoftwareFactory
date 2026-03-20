@@ -1,0 +1,20 @@
+{
+  "name": "@software-factory/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@software-factory/core": "workspace:*",
+    "@software-factory/temporal-workflows": "workspace:*",
+    "@temporalio/client": "1.14.1",
+    "@temporalio/testing": "1.14.1",
+    "@temporalio/worker": "1.14.1",
+    "@temporalio/workflow": "1.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.0"
+  }
+}

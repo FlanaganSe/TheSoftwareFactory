@@ -8,6 +8,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "vitest run",
+    "test:e2e": "vitest run --config packages/e2e/vitest.config.ts",
     "test:watch": "vitest",
     "build": "pnpm -r run build",
     "clean": "pnpm -r exec -- rm -rf dist *.tsbuildinfo",

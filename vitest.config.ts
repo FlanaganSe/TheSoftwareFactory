@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    projects: ["packages/*/vitest.config.ts"],
+    projects: ["packages/!(e2e)/vitest.config.ts"],
     passWithNoTests: true,
     // Limit concurrent worker processes across all workspace projects.
     // Without this, vitest uses one worker per CPU core (11 on this machine),
