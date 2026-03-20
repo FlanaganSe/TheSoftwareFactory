@@ -144,7 +144,6 @@ describe("broad reconciler", () => {
   it("reconcileActivePRs detects merged PRs", async () => {
     const { createGraphQLClient } = await import("../../src/github/client.js");
     vi.mocked(createGraphQLClient).mockReturnValueOnce(
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
       vi.fn().mockResolvedValue({
         repository: {
           pullRequest: {
@@ -186,7 +185,6 @@ describe("broad reconciler", () => {
   it("reconcileActivePRs counts stale reviews", async () => {
     const { createGraphQLClient } = await import("../../src/github/client.js");
     vi.mocked(createGraphQLClient).mockReturnValueOnce(
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
       vi.fn().mockResolvedValue({
         repository: {
           pullRequest: {

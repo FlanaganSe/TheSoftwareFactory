@@ -11,6 +11,7 @@ import type {
 } from "@software-factory/core";
 import {
   CancellationScope,
+  ContinueAsNew,
   allHandlersFinished,
   condition,
   continueAsNew,
@@ -871,6 +872,9 @@ export async function taskOrchestrator(
       }
     }
   } catch (error: unknown) {
+    if (error instanceof ContinueAsNew) {
+      throw error;
+    }
     currentState = "failed";
     failureReason = error instanceof Error ? error.message : String(error);
   }

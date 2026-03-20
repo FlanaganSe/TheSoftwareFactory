@@ -6,8 +6,8 @@ description: Technology choices and constraints. These are LOCKED — do not dev
 - **Runtime**: Node.js 22 LTS (`node:22-slim` for Docker)
 - **Language**: TypeScript strict (`typescript` 5.x, `@tsconfig/node22`)
 - **Package manager**: pnpm 10+ (workspaces, strict deps)
-- **Monorepo**: pnpm workspaces — 7 packages (core, db, temporal-workflows, temporal-activities, worker, api, cli)
-- **HTTP**: Fastify + `@fastify/type-provider-zod`
+- **Monorepo**: pnpm workspaces — 8 packages (core, db, temporal-workflows, temporal-activities, worker, api, cli, e2e)
+- **HTTP**: Fastify + `fastify-type-provider-zod`
 - **Orchestration**: Temporal (`@temporalio/*` 1.14.x — ALL packages MUST share exact version)
 - **Database**: PostgreSQL 16 (`postgres:16-alpine`) — system of record
 - **ORM**: Drizzle ORM (`drizzle-orm` + `drizzle-kit` + `pg`)
@@ -19,7 +19,7 @@ description: Technology choices and constraints. These are LOCKED — do not dev
 - **Code parsing**: tree-sitter (native N-API, WASM fallback)
 - **Validation**: Zod (`safeParse` at boundaries, types derived via `z.infer<>`)
 - **Error handling**: neverthrow (`Result<T, E>`)
-- **CLI**: Commander.js + Ink + ink-ui
+- **CLI**: Commander.js + chalk + ora + @inquirer/prompts
 - **Tests**: Vitest + `@testcontainers/postgresql` + `@temporalio/testing`
 - **Linter/Formatter**: Biome (`@biomejs/biome`)
 - **Build (dev)**: tsx
@@ -28,7 +28,7 @@ description: Technology choices and constraints. These are LOCKED — do not dev
 - **Observability**: OpenTelemetry (tiered: built-in → optional export → full Grafana)
 - **Config**: TOML (`@iarna/toml`, XDG paths)
 - **Glob matching**: picomatch (ReDoS-safe, 0 deps)
-- **Frontend (Phase 2)**: SvelteKit
+- **Frontend**: SvelteKit (Svelte 5 runes) + Tailwind CSS v4
 
 ## Critical Constraints
 

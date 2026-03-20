@@ -81,7 +81,7 @@ See [Architecture Guide](docs/architecture.md) for the full breakdown.
 | `temporal-activities` | Side effects: GitHub, LLM, Docker, indexing, safety | 8 domain modules, ~12K lines |
 | `api` | HTTP server, webhooks, auth, SSE | Fastify + Zod validation, RBAC |
 | `worker` | Temporal worker process | Wires all activities with DI |
-| `cli` | Terminal interface | Commander.js + Ink, 11 commands |
+| `cli` | Terminal interface | Commander.js + chalk + ora, 11 commands |
 | `e2e` | End-to-end workflow tests | Temporal test environment, time-skipping |
 
 Plus `apps/dashboard` — a SvelteKit app for visual task management.

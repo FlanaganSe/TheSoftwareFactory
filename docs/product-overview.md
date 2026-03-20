@@ -29,8 +29,8 @@ Software Factory is a self-hosted control plane that turns GitHub issues (or API
 | Object storage | MinIO (S3-compatible) | Evidence artifact persistence |
 | Validation | Zod | `.strict()` on all schemas; types derived via `z.infer<>` |
 | Error handling | neverthrow | `Result<T, FactoryError>` at domain boundaries; no thrown exceptions |
-| CLI | Commander.js + Ink + ink-ui | Rich terminal UI with interactive review |
-| Frontend | SvelteKit (Svelte 5 runes) | Dashboard for task management, evidence review, safety controls |
+| CLI | Commander.js + chalk + ora + @inquirer/prompts | Terminal interface with interactive review |
+| Frontend | SvelteKit (Svelte 5 runes) + Tailwind CSS v4 | Dashboard for task management, evidence review, safety controls |
 | Tests | Vitest + Testcontainers + @temporalio/testing | Real databases in tests; time-skipping for workflow tests |
 | Lint/Format | Biome | Single tool for both |
 
@@ -117,7 +117,7 @@ software-factory/
 │   ├── temporal-activities/  # Side effects: GitHub, LLM, Docker, indexing, validation, evidence
 │   ├── api/                  # Fastify HTTP server, webhooks, auth, SSE
 │   ├── worker/               # Temporal worker process, activity wiring
-│   ├── cli/                  # Terminal interface (Commander.js + Ink)
+│   ├── cli/                  # Terminal interface (Commander.js + chalk + ora)
 │   └── e2e/                  # End-to-end workflow tests with mock activities
 ├── apps/
 │   └── dashboard/            # SvelteKit visual interface
@@ -231,7 +231,7 @@ One canonical identity: DB auto-generated UUID as PK, `(github_owner, github_rep
 
 ## Data layer
 
-### Tables (17 + 1 lookup)
+### Tables (18 + 1 lookup)
 
 **Core:**
 - `repos` — GitHub repositories; PK uuid, unique on (github_owner, github_repo)
@@ -254,7 +254,11 @@ One canonical identity: DB auto-generated UUID as PK, `(github_owner, github_rep
 - `secret_bindings` — AES-256-GCM encrypted secrets with envelope encryption
 
 **Code Understanding:**
+- `capability_snapshots` — 10-step repo capability scan results
 - `code_index_versions` — tree-sitter index snapshots
+- `code_symbols` — Extracted symbols (functions, classes, interfaces)
+- `code_dependencies` — Import/export relationships between files
+- `code_files` — Indexed file metadata
 - `environment_states` — Docker sandbox cache state
 
 **Infrastructure:**
@@ -263,9 +267,9 @@ One canonical identity: DB auto-generated UUID as PK, `(github_owner, github_rep
 
 ### Repositories
 
-10 repository modules in `packages/db/src/repositories/`, each exporting pure functions that take `(db: DbInstance, ...)` and return `FactoryResult<T>`:
+11 repository modules in `packages/db/src/repositories/`, each exporting pure functions that take `(db: DbInstance, ...)` and return `FactoryResult<T>`:
 
-`taskRepo` · `repoRepo` · `auditRepo` · `policyRepo` · `webhookRepo` · `sideEffectRepo` · `apiKeyRepo` · `indexRepo` · `evidenceRepo` · `reviewStateRepo`
+`taskRepo` · `repoRepo` · `auditRepo` · `policyRepo` · `webhookRepo` · `sideEffectRepo` · `apiKeyRepo` · `indexRepo` · `evidenceRepo` · `reviewStateRepo` · `capabilitySnapshotRepo`
 
 ---
 
@@ -298,21 +302,30 @@ Bearer tokens with SHA-256 hashed API keys. Three roles: `admin`, `operator`, `v
 | GET | `/api/tasks/:id/evidence` | any | Get evidence bundle |
 | GET | `/api/tasks/:id/freshness` | any | Check if evidence is stale |
 
+**Repos:**
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/repos` | any | List repos |
+| GET | `/api/repos/:id` | any | Get repo details |
+| POST | `/api/repos/scan` | admin, operator | Trigger capability scan |
+
 **Infrastructure:**
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/api/health` | none | Health check |
-| GET | `/api/metrics` | none | Prometheus metrics |
+| GET | `/health` | none | Health check (+ `/health/live`, `/health/ready`) |
+| GET | `/metrics` | none | Prometheus metrics |
 | GET | `/api/events` | token in query | SSE stream (Redis pub/sub) |
 | POST | `/api/webhooks/github` | HMAC-SHA256 | GitHub webhook receiver |
-| GET | `/api/setup/github` | admin | GitHub App manifest flow |
+| GET | `/api/setup/github` | none (skipAuth) | GitHub App manifest flow |
+| GET | `/api/setup/github/callback` | none (skipAuth) | GitHub App setup callback |
 
 **API Keys & Safety:**
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | `/api/keys` | admin | Create API key |
+| GET | `/api/keys` | admin | List API keys |
 | DELETE | `/api/keys/:id` | admin | Revoke API key |
-| GET/POST | `/api/safety/*` | admin | Kill switch, circuit breakers |
+| GET/POST | `/api/safety/*` | admin | Kill switch, circuit breakers, cost budgets |
 
 ---
 

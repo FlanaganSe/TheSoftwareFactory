@@ -232,6 +232,8 @@ export interface LLMCallAuditEntryData {
   readonly provider: string;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly reasoningTokens?: number;
+  readonly cachedTokens?: number;
   readonly costCents: number;
   readonly latencyMs: number;
   readonly taskId: string;

@@ -7,7 +7,7 @@
  * sends an approve signal before any code execution begins.
  */
 
-import type { AutonomyLevel } from "@software-factory/core";
+import type { AutonomyLevel, PolicyConfig } from "@software-factory/core";
 import {
   ApplicationFailure,
   condition,
@@ -25,7 +25,6 @@ import type {
   SandboxInstanceRef,
   TaskActivities,
 } from "../activity-types.js";
-import type { PolicyConfig } from "@software-factory/core";
 import { approveSignal, rejectSignal } from "../signals.js";
 
 const safetyActivities = proxyActivities<SafetyActivities>({

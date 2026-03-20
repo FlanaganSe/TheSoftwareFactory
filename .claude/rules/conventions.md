@@ -35,4 +35,12 @@ description: Code style and established patterns.
 - Config loading lives in `packages/api`, `packages/worker`, `packages/cli` — not in core
 
 ## Established Patterns
-<!-- Add as discovered: **Name**: Description. See `path/to/example`. -->
+
+- **Activity dependency injection**: Activity factories take `{ db, docker, ... }` deps and return activity function objects. Worker spreads them into `Worker.create({ activities })`. See `packages/worker/src/worker.ts`.
+- **Route registration**: Fastify routes are async plugin functions registered without prefix — each route defines its full path (e.g., `/api/tasks`). See `packages/api/src/app.ts`.
+- **Repository functions**: Pure functions `(db: DbInstance, ...) → Promise<FactoryResult<T>>`. No classes. See `packages/db/src/repositories/`.
+- **Phase workflows**: Each phase is a standalone workflow function in `packages/temporal-workflows/src/phases/`. The orchestrator calls them as child workflows.
+- **Activity types bridge**: `packages/temporal-workflows/src/activity-types.ts` defines type-only interfaces matching activity implementations. Workflows use `proxyActivities<T>()` with these types.
+- **Zod schema → type derivation**: All types derived via `z.infer<typeof schema>`. Schemas live in `packages/core/src/schemas/`. No hand-written parallel types.
+- **FactoryResult boundary conversion**: Activities catch `FactoryResult.isErr()` and throw `ApplicationFailure`. See `packages/temporal-activities/src/`.
+- **getOrCreateRepo**: Two-step slug lookup + create with unique constraint retry for idempotent repo resolution. See `packages/db/src/repositories/repo-repository.ts`.
