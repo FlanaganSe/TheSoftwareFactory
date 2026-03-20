@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
 import type { DbConnection } from "@software-factory/db";
+import { CredentialBroker } from "@software-factory/temporal-activities";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import {
@@ -17,6 +18,9 @@ export interface ServerOptions {
   readonly redisUrl?: string;
   readonly temporalAddress?: string;
   readonly minioEndpoint?: string;
+  readonly githubAppId?: string;
+  readonly githubPrivateKey?: string;
+  readonly githubInstallationId?: number;
 }
 
 export async function createServer(
@@ -51,6 +55,21 @@ export async function createServer(
   app.decorate("redisUrl", options.redisUrl);
   app.decorate("temporalAddress", options.temporalAddress);
   app.decorate("minioEndpoint", options.minioEndpoint);
+
+  // GitHub App credentials for repo scanning
+  if (
+    options.githubAppId &&
+    options.githubPrivateKey &&
+    options.githubInstallationId
+  ) {
+    const broker = new CredentialBroker(
+      options.githubAppId,
+      options.githubPrivateKey,
+      options.githubInstallationId,
+    );
+    app.decorate("credentialBroker", broker);
+    app.decorate("githubInstallationId", options.githubInstallationId);
+  }
 
   return app;
 }

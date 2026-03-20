@@ -292,310 +292,128 @@ export async function taskOrchestrator(
 
   // ─── Phase execution loop ───
 
-  for (let i = startIdx; i < PHASE_ORDER.length; i++) {
-    // Check kill flag between phases
-    if (killed) {
-      break;
-    }
+  let failureReason: string | undefined;
 
-    // Check Continue-As-New triggers
-    const info = workflowInfo();
-    if (info.continueAsNewSuggested || info.historyLength > 10_000) {
-      await condition(allHandlersFinished);
-      await continueAsNew<typeof taskOrchestrator>({
-        ...input,
-        resumeFromPhase: PHASE_ORDER[i],
-        attemptNumber,
-        phaseIteration,
-        trustedContext,
-        capabilitySnapshot,
-        setupResult,
-        implementResult,
-        validateResult,
-      });
-    }
+  try {
+    for (let i = startIdx; i < PHASE_ORDER.length; i++) {
+      // Check kill flag between phases
+      if (killed) {
+        break;
+      }
 
-    const phase = PHASE_ORDER[i];
-    currentPhase = phase;
-    lastActivityAt = new Date().toISOString();
-
-    // Phases that repeat on changes_requested need iteration in the ID
-    // to avoid Temporal's workflow ID uniqueness constraint
-    const needsIteration =
-      phase === "implement" ||
-      phase === "validate" ||
-      phase === "evidence" ||
-      phase === "review" ||
-      phase === "pr_tracking";
-    const childId = needsIteration
-      ? `task-${input.taskId}-${phase}-${phaseIteration}`
-      : `task-${input.taskId}-${phase}`;
-
-    if (phase === "intake") {
-      const intakeResult = await executeChild("intakePhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
-            objective: input.objective,
-            autonomyLevel: input.autonomyLevel,
-            createdBy: "system",
-          },
-        ],
-      });
-
-      currentState = intakeResult.state;
-
-      // Handle clarification if needed
-      if (intakeResult.needsClarification) {
-        if (killed) break;
-
-        const clarifyResult = await executeChild("clarifyPhase", {
-          workflowId: `task-${input.taskId}-clarify`,
-          args: [
-            {
-              taskId: intakeResult.taskId,
-              objective: input.objective,
-            },
-          ],
+      // Check Continue-As-New triggers
+      const info = workflowInfo();
+      if (info.continueAsNewSuggested || info.historyLength > 10_000) {
+        await condition(allHandlersFinished);
+        await continueAsNew<typeof taskOrchestrator>({
+          ...input,
+          resumeFromPhase: PHASE_ORDER[i],
+          attemptNumber,
+          phaseIteration,
+          trustedContext,
+          capabilitySnapshot,
+          setupResult,
+          implementResult,
+          validateResult,
         });
-        currentState = clarifyResult.state;
       }
-    } else if (phase === "understand") {
-      currentState = "in_progress";
 
-      // Capture TrustedBaseContext if not already done
-      // (This is done as a GitHub activity in the understand phase context)
-      const repoPath = `/tmp/factory/${input.taskId}/repo`;
+      const phase = PHASE_ORDER[i];
+      currentPhase = phase;
+      lastActivityAt = new Date().toISOString();
 
-      const result = await executeChild("understandPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
-            objective: input.objective,
-            repoOwner: input.repoOwner ?? "",
-            repoName: input.repoName ?? "",
-            repoPath,
-            baseSha: trustedContext?.baseSha ?? "HEAD",
-          },
-        ],
-      });
+      // Phases that repeat on changes_requested need iteration in the ID
+      // to avoid Temporal's workflow ID uniqueness constraint
+      const needsIteration =
+        phase === "implement" ||
+        phase === "validate" ||
+        phase === "evidence" ||
+        phase === "review" ||
+        phase === "pr_tracking";
+      const childId = needsIteration
+        ? `task-${input.taskId}-${phase}-${phaseIteration}`
+        : `task-${input.taskId}-${phase}`;
 
-      understandResult = result;
-      capabilitySnapshot = result.capabilitySnapshot;
-      // Capture trustedContext from understand phase if not already set
-      if (!trustedContext) {
-        trustedContext = result.trustedContext;
-      }
-    } else if (phase === "plan") {
-      const defaultModel = "openai/gpt-5.4-nano";
-      const planResult = await executeChild("planPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            objective: input.objective,
-            repoMap: understandResult?.repoMap ?? [],
-            relevantFiles: [],
-            model: defaultModel,
-          },
-        ],
-      });
-
-      planText = planResult.plan;
-    } else if (phase === "setup") {
-      const setupRepoPath = `/tmp/factory/${input.taskId}/repo`;
-      const repoSlug = `${input.repoOwner ?? ""}/${input.repoName ?? ""}`;
-
-      const defaultContext: TrustedBaseContext = trustedContext ?? {
-        baseSha: "HEAD",
-        setupContract: null,
-        policySnapshot: [],
-        behavioralControlFiles: {},
-        validationCommandSources: [],
-        capturedAt: new Date().toISOString(),
-      };
-
-      setupResult = await executeChild("setupPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
-            repoPath: setupRepoPath,
-            repoSlug,
-            trustedContext: defaultContext,
-            autonomyLevel: input.autonomyLevel,
-          },
-        ],
-      });
-    } else if (phase === "implement") {
-      const branchName = `factory/${input.taskId}`;
-      const implModel = "openai/gpt-5.4-nano";
-      const baseSha = trustedContext?.baseSha ?? "HEAD";
-
-      const implResult = await executeChild("implementPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            objective: input.objective,
-            plan: planText ?? input.objective,
-            iteration: phaseIteration,
-            sandbox: setupResult?.sandboxInstance ?? {
-              containerId: "",
-              phase: "execution",
-              labels: {},
-            },
-            repoOwner: input.repoOwner ?? "",
-            repoName: input.repoName ?? "",
-            branchName,
-            baseSha,
-            model: implModel,
-            budgetCents: costBudgetCents,
-            autonomyLevel: input.autonomyLevel,
-          },
-        ],
-      });
-
-      implementResult = implResult;
-      costCents += implResult.agentResult.totalCostCents;
-    } else if (phase === "validate") {
-      const validateContext: TrustedBaseContext = trustedContext ?? {
-        baseSha: "HEAD",
-        setupContract: null,
-        policySnapshot: [],
-        behavioralControlFiles: {},
-        validationCommandSources: [],
-        capturedAt: new Date().toISOString(),
-      };
-
-      validateResult = await executeChild("validatePhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
-            containerId: setupResult?.sandboxInstance?.containerId ?? "",
-            trustedContext: validateContext,
-            changedFiles: implementResult?.agentResult?.filesModified ?? [],
-            indexVersionId: understandResult?.indexVersionId ?? "",
-            policies: validateContext.policySnapshot,
-          },
-        ],
-      });
-    } else if (phase === "evidence") {
-      const evidenceContext: TrustedBaseContext = trustedContext ?? {
-        baseSha: "HEAD",
-        setupContract: null,
-        policySnapshot: [],
-        behavioralControlFiles: {},
-        validationCommandSources: [],
-        capturedAt: new Date().toISOString(),
-      };
-
-      const evidenceResult = await executeChild("evidencePhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
-            objective: input.objective,
-            attemptNumber,
-            baseSha: evidenceContext.baseSha,
-            headSha: implementResult?.headSha ?? evidenceContext.baseSha,
-            mergeBaseSha: evidenceContext.baseSha,
-            containerId: setupResult?.sandboxInstance?.containerId ?? "",
-            validationResult: validateResult?.validationResult ?? {
-              testResults: {
-                passed: 0,
-                failed: 0,
-                skipped: 0,
-              },
-              lintResults: { errorCount: 0, warningCount: 0 },
-              securityScanResults: {
-                vulnerabilities: [],
-                totalFindings: 0,
-                criticalCount: 0,
-                highCount: 0,
-              },
-              blastRadius: { files: 0, packages: 0 },
-              protectedSurfaceEdits: [],
-              migrationImpact: {
-                hasMigrations: false,
-                migrationFiles: [],
-                schemaChanges: [],
-              },
-              revertabilityClass: "clean_revert",
-              commandsRun: [],
-            },
-            agentResult: {
-              filesModified: implementResult?.agentResult?.filesModified ?? [],
-              totalCostCents: implementResult?.agentResult?.totalCostCents ?? 0,
-            },
-            capabilitySnapshot: {
-              requiredStatusChecks:
-                capabilitySnapshot?.requiredStatusChecks ?? [],
-            },
-            changedFiles: implementResult?.agentResult?.filesModified ?? [],
-            policies: evidenceContext.policySnapshot,
-            codeownersEntries: capabilitySnapshot?.codeowners?.entries ?? [],
-            indexVersionId: understandResult?.indexVersionId ?? "",
-          },
-        ],
-      });
-
-      evidenceLocator = evidenceResult.locator;
-      currentState = "evidence_ready";
-    } else if (phase === "review") {
-      if (addressingFeedback) {
-        // Skip internal review when re-entering after external review feedback.
-        // The PR already exists and the external reviewer is tracking it.
-        currentState = "approved";
-      } else {
-        const reviewResult = await executeChild("reviewPhase", {
+      if (phase === "intake") {
+        const intakeResult = await executeChild("intakePhase", {
           workflowId: childId,
           args: [
             {
               taskId: input.taskId,
-              reviewTimeoutMs: input.config.reviewTimeoutMs,
+              repoId: input.repoId,
+              objective: input.objective,
+              autonomyLevel: input.autonomyLevel,
+              createdBy: "system",
             },
           ],
         });
 
-        if (reviewResult.outcome === "approved") {
-          currentState = "approved";
-          // Continue to pr_creation
-        } else if (reviewResult.outcome === "changes_requested") {
-          // Loop back to implement
-          phaseIteration++;
-          if (phaseIteration < input.config.maxImplementationAttempts) {
-            // Jump back to implement phase
-            i = PHASE_ORDER.indexOf("implement") - 1; // -1 because loop increments
-            currentState = "changes_requested";
-            continue;
-          }
-          // Max attempts exceeded — fail
-          currentState = "failed";
-          break;
-        } else if (reviewResult.outcome === "rejected") {
-          currentState = "failed";
-          break;
-        } else if (reviewResult.outcome === "timed_out") {
-          currentState = "failed";
-          break;
+        currentState = intakeResult.state;
+
+        // Handle clarification if needed
+        if (intakeResult.needsClarification) {
+          if (killed) break;
+
+          const clarifyResult = await executeChild("clarifyPhase", {
+            workflowId: `task-${input.taskId}-clarify`,
+            args: [
+              {
+                taskId: intakeResult.taskId,
+                objective: input.objective,
+              },
+            ],
+          });
+          currentState = clarifyResult.state;
         }
-      }
-    } else if (phase === "pr_creation") {
-      if (addressingFeedback) {
-        // Skip PR creation on feedback loop — PR already exists.
-        // The implement phase pushed new commits to the existing branch.
-        currentState = "pr_created";
-      } else {
-        const prContext: TrustedBaseContext = trustedContext ?? {
+      } else if (phase === "understand") {
+        currentState = "in_progress";
+
+        // Capture TrustedBaseContext if not already done
+        // (This is done as a GitHub activity in the understand phase context)
+        const repoPath = `/tmp/factory/${input.taskId}/repo`;
+
+        const result = await executeChild("understandPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              objective: input.objective,
+              repoOwner: input.repoOwner ?? "",
+              repoName: input.repoName ?? "",
+              repoPath,
+              baseSha: trustedContext?.baseSha ?? "HEAD",
+            },
+          ],
+        });
+
+        understandResult = result;
+        capabilitySnapshot = result.capabilitySnapshot;
+        // Capture trustedContext from understand phase if not already set
+        if (!trustedContext) {
+          trustedContext = result.trustedContext;
+        }
+      } else if (phase === "plan") {
+        const defaultModel = "openai/gpt-5.4-nano";
+        const planResult = await executeChild("planPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              objective: input.objective,
+              repoMap: understandResult?.repoMap ?? [],
+              relevantFiles: [],
+              model: defaultModel,
+            },
+          ],
+        });
+
+        planText = planResult.plan;
+      } else if (phase === "setup") {
+        const setupRepoPath = `/tmp/factory/${input.taskId}/repo`;
+        const repoSlug = `${input.repoOwner ?? ""}/${input.repoName ?? ""}`;
+
+        const defaultContext: TrustedBaseContext = trustedContext ?? {
           baseSha: "HEAD",
           setupContract: null,
           policySnapshot: [],
@@ -604,26 +422,303 @@ export async function taskOrchestrator(
           capturedAt: new Date().toISOString(),
         };
 
-        const vr = validateResult?.validationResult;
-        const validationData = {
-          testResults: vr?.testResults ?? { passed: 0, failed: 0, skipped: 0 },
-          lintResults: vr?.lintResults ?? { errorCount: 0, warningCount: 0 },
-          securityScanResults: {
-            vulnerabilities: [] as {
-              severity: string;
-              description: string;
-              file?: string;
-              line?: number;
-              id: string;
-            }[],
-            criticalCount: vr?.criticalVulnerabilities ?? 0,
-            highCount: 0,
-          },
-          blastRadius: vr?.blastRadius ?? { files: 0, packages: 0 },
-          revertabilityClass: vr?.revertabilityClass ?? "clean_revert",
+        setupResult = await executeChild("setupPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              repoPath: setupRepoPath,
+              repoSlug,
+              trustedContext: defaultContext,
+              autonomyLevel: input.autonomyLevel,
+            },
+          ],
+        });
+      } else if (phase === "implement") {
+        const branchName = `factory/${input.taskId}`;
+        const implModel = "openai/gpt-5.4-nano";
+        const baseSha = trustedContext?.baseSha ?? "HEAD";
+
+        const implResult = await executeChild("implementPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              objective: input.objective,
+              plan: planText ?? input.objective,
+              iteration: phaseIteration,
+              sandbox: setupResult?.sandboxInstance ?? {
+                containerId: "",
+                phase: "execution",
+                labels: {},
+              },
+              repoOwner: input.repoOwner ?? "",
+              repoName: input.repoName ?? "",
+              branchName,
+              baseSha,
+              model: implModel,
+              budgetCents: costBudgetCents,
+              autonomyLevel: input.autonomyLevel,
+              repoMap: understandResult?.repoMap ?? [],
+              policies: trustedContext?.policySnapshot ?? [],
+            },
+          ],
+        });
+
+        implementResult = implResult;
+        costCents += implResult.agentResult.totalCostCents;
+      } else if (phase === "validate") {
+        const validateContext: TrustedBaseContext = trustedContext ?? {
+          baseSha: "HEAD",
+          setupContract: null,
+          policySnapshot: [],
+          behavioralControlFiles: {},
+          validationCommandSources: [],
+          capturedAt: new Date().toISOString(),
         };
 
-        prResult = (await executeChild("prCreationPhase", {
+        validateResult = await executeChild("validatePhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              containerId: setupResult?.sandboxInstance?.containerId ?? "",
+              trustedContext: validateContext,
+              changedFiles: implementResult?.agentResult?.filesModified ?? [],
+              indexVersionId: understandResult?.indexVersionId ?? "",
+              policies: validateContext.policySnapshot,
+            },
+          ],
+        });
+      } else if (phase === "evidence") {
+        const evidenceContext: TrustedBaseContext = trustedContext ?? {
+          baseSha: "HEAD",
+          setupContract: null,
+          policySnapshot: [],
+          behavioralControlFiles: {},
+          validationCommandSources: [],
+          capturedAt: new Date().toISOString(),
+        };
+
+        const evidenceResult = await executeChild("evidencePhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              objective: input.objective,
+              attemptNumber,
+              baseSha: evidenceContext.baseSha,
+              headSha: implementResult?.headSha ?? evidenceContext.baseSha,
+              mergeBaseSha: evidenceContext.baseSha,
+              containerId: setupResult?.sandboxInstance?.containerId ?? "",
+              validationResult: validateResult?.validationResult ?? {
+                testResults: {
+                  passed: 0,
+                  failed: 0,
+                  skipped: 0,
+                },
+                lintResults: { errorCount: 0, warningCount: 0 },
+                securityScanResults: {
+                  vulnerabilities: [],
+                  totalFindings: 0,
+                  criticalCount: 0,
+                  highCount: 0,
+                },
+                blastRadius: { files: 0, packages: 0 },
+                protectedSurfaceEdits: [],
+                migrationImpact: {
+                  hasMigrations: false,
+                  migrationFiles: [],
+                  schemaChanges: [],
+                },
+                revertabilityClass: "clean_revert",
+                commandsRun: [],
+              },
+              agentResult: {
+                filesModified:
+                  implementResult?.agentResult?.filesModified ?? [],
+                totalCostCents:
+                  implementResult?.agentResult?.totalCostCents ?? 0,
+              },
+              capabilitySnapshot: {
+                requiredStatusChecks:
+                  capabilitySnapshot?.requiredStatusChecks ?? [],
+              },
+              changedFiles: implementResult?.agentResult?.filesModified ?? [],
+              policies: evidenceContext.policySnapshot,
+              codeownersEntries: capabilitySnapshot?.codeowners?.entries ?? [],
+              indexVersionId: understandResult?.indexVersionId ?? "",
+            },
+          ],
+        });
+
+        evidenceLocator = evidenceResult.locator;
+        currentState = "evidence_ready";
+      } else if (phase === "review") {
+        if (addressingFeedback) {
+          // Skip internal review when re-entering after external review feedback.
+          // The PR already exists and the external reviewer is tracking it.
+          currentState = "approved";
+        } else {
+          const reviewResult = await executeChild("reviewPhase", {
+            workflowId: childId,
+            args: [
+              {
+                taskId: input.taskId,
+                reviewTimeoutMs: input.config.reviewTimeoutMs,
+              },
+            ],
+          });
+
+          if (reviewResult.outcome === "approved") {
+            currentState = "approved";
+            // Continue to pr_creation
+          } else if (reviewResult.outcome === "changes_requested") {
+            // Loop back to implement
+            phaseIteration++;
+            if (phaseIteration < input.config.maxImplementationAttempts) {
+              // Jump back to implement phase
+              i = PHASE_ORDER.indexOf("implement") - 1; // -1 because loop increments
+              currentState = "changes_requested";
+              continue;
+            }
+            // Max attempts exceeded — fail
+            currentState = "failed";
+            break;
+          } else if (reviewResult.outcome === "rejected") {
+            currentState = "failed";
+            break;
+          } else if (reviewResult.outcome === "timed_out") {
+            currentState = "failed";
+            break;
+          }
+        }
+      } else if (phase === "pr_creation") {
+        if (addressingFeedback) {
+          // Skip PR creation on feedback loop — PR already exists.
+          // The implement phase pushed new commits to the existing branch.
+          currentState = "pr_created";
+        } else {
+          const prContext: TrustedBaseContext = trustedContext ?? {
+            baseSha: "HEAD",
+            setupContract: null,
+            policySnapshot: [],
+            behavioralControlFiles: {},
+            validationCommandSources: [],
+            capturedAt: new Date().toISOString(),
+          };
+
+          const vr = validateResult?.validationResult;
+          const validationData = {
+            testResults: vr?.testResults ?? {
+              passed: 0,
+              failed: 0,
+              skipped: 0,
+            },
+            lintResults: vr?.lintResults ?? { errorCount: 0, warningCount: 0 },
+            securityScanResults: {
+              vulnerabilities: [] as {
+                severity: string;
+                description: string;
+                file?: string;
+                line?: number;
+                id: string;
+              }[],
+              criticalCount: vr?.criticalVulnerabilities ?? 0,
+              highCount: 0,
+            },
+            blastRadius: vr?.blastRadius ?? { files: 0, packages: 0 },
+            revertabilityClass: vr?.revertabilityClass ?? "clean_revert",
+          };
+
+          prResult = (await executeChild("prCreationPhase", {
+            workflowId: childId,
+            args: [
+              {
+                taskId: input.taskId,
+                repoId: input.repoId,
+                owner: input.repoOwner,
+                repo: input.repoName,
+                candidateBranch: `factory/${input.taskId}`,
+                baseBranch:
+                  prContext.baseSha === "HEAD"
+                    ? "main"
+                    : (capabilitySnapshot?.defaultBranch ?? "main"),
+                objective: input.objective,
+                headSha: implementResult?.headSha ?? prContext.baseSha,
+                attemptNumber,
+                evidenceLocator: evidenceLocator ?? {
+                  taskId: input.taskId,
+                  attemptNumber,
+                  bundleId: "",
+                  artifactPrefix: "",
+                  evidenceJsonKey: "",
+                  manifestKey: "",
+                  diffPatchKey: "",
+                  createdAt: new Date().toISOString(),
+                },
+                riskSummary: {
+                  hardBlockers: [],
+                  softConcerns: [],
+                  humanJudgmentRequired: [],
+                  informational: [],
+                },
+                validationPassed:
+                  validateResult?.validationResult?.passed ?? false,
+                validationResult: validationData,
+                capabilitySnapshot: capabilitySnapshot ?? {
+                  repoId: input.repoId,
+                  capturedAt: new Date().toISOString(),
+                  sourceRevision: "HEAD",
+                  defaultBranch: "main",
+                  visibility: "private" as const,
+                  isArchived: false,
+                  isFork: false,
+                  hasWiki: false,
+                  hasProjects: false,
+                  branchProtection: null,
+                  rulesets: [],
+                  hasInheritedRulesets: false,
+                  codeowners: null,
+                  mergeQueue: null,
+                  allowedMergeStrategies: ["squash" as const],
+                  requiredStatusChecks: [],
+                  requiredWorkflows: [],
+                  requiresSignedCommits: false,
+                  requiresLinearHistory: false,
+                  requiresConversationResolution: false,
+                  dismissesStaleReviews: false,
+                  requiredReviewCount: 0,
+                  requiresCodeOwnerReview: false,
+                  lastPusherCannotApprove: false,
+                  hasPullRequestTargetWorkflows: false,
+                  pullRequestTargetWorkflowPaths: [],
+                  pushRestrictions: null,
+                  bypassActors: [],
+                  environments: [],
+                  repoClass: "C" as const,
+                  supportedByFactory: true,
+                  unsupportedReasons: [],
+                  warnings: [],
+                },
+                evidenceBundleId: evidenceLocator?.bundleId,
+                protectedSurfaceEdits: vr?.protectedSurfaceEdits,
+                changedFiles: implementResult?.agentResult?.filesModified?.map(
+                  (f: string) => ({ path: f }),
+                ),
+                ownersImpacted: capabilitySnapshot?.codeowners?.entries?.map(
+                  (e) => e.owners.join(", "),
+                ),
+              },
+            ],
+          })) as PrCreationFullResult;
+          currentState = "pr_created";
+        }
+      } else if (phase === "pr_tracking") {
+        const trackingResult = (await executeChild("prTrackingPhase", {
           workflowId: childId,
           args: [
             {
@@ -631,232 +726,153 @@ export async function taskOrchestrator(
               repoId: input.repoId,
               owner: input.repoOwner,
               repo: input.repoName,
-              candidateBranch: `factory/${input.taskId}`,
-              baseBranch:
-                prContext.baseSha === "HEAD"
-                  ? "main"
-                  : (capabilitySnapshot?.defaultBranch ?? "main"),
-              objective: input.objective,
-              headSha: implementResult?.headSha ?? prContext.baseSha,
-              attemptNumber,
-              evidenceLocator: evidenceLocator ?? {
-                taskId: input.taskId,
-                attemptNumber,
-                bundleId: "",
-                artifactPrefix: "",
-                evidenceJsonKey: "",
-                manifestKey: "",
-                diffPatchKey: "",
-                createdAt: new Date().toISOString(),
-              },
-              riskSummary: {
-                hardBlockers: [],
-                softConcerns: [],
-                humanJudgmentRequired: [],
-                informational: [],
-              },
-              validationPassed:
-                validateResult?.validationResult?.passed ?? false,
-              validationResult: validationData,
-              capabilitySnapshot: capabilitySnapshot ?? {
-                repoId: input.repoId,
-                capturedAt: new Date().toISOString(),
-                sourceRevision: "HEAD",
-                defaultBranch: "main",
-                visibility: "private" as const,
-                isArchived: false,
-                isFork: false,
-                hasWiki: false,
-                hasProjects: false,
-                branchProtection: null,
-                rulesets: [],
-                hasInheritedRulesets: false,
-                codeowners: null,
-                mergeQueue: null,
-                allowedMergeStrategies: ["squash" as const],
-                requiredStatusChecks: [],
-                requiredWorkflows: [],
-                requiresSignedCommits: false,
-                requiresLinearHistory: false,
-                requiresConversationResolution: false,
-                dismissesStaleReviews: false,
-                requiredReviewCount: 0,
-                requiresCodeOwnerReview: false,
-                lastPusherCannotApprove: false,
-                hasPullRequestTargetWorkflows: false,
-                pullRequestTargetWorkflowPaths: [],
-                pushRestrictions: null,
-                bypassActors: [],
-                environments: [],
-                repoClass: "C" as const,
-                supportedByFactory: true,
-                unsupportedReasons: [],
-                warnings: [],
-              },
-              evidenceBundleId: evidenceLocator?.bundleId,
-              protectedSurfaceEdits: vr?.protectedSurfaceEdits,
-              changedFiles: implementResult?.agentResult?.filesModified?.map(
-                (f: string) => ({ path: f }),
-              ),
-              ownersImpacted: capabilitySnapshot?.codeowners?.entries?.map(
-                (e) => e.owners.join(", "),
-              ),
+              prNumber: prResult?.prNumber ?? 0,
+              prNodeId: prResult?.prNodeId ?? "",
+              headSha: implementResult?.headSha ?? "",
+              baseBranch: capabilitySnapshot?.defaultBranch ?? "main",
+              requiredChecks:
+                capabilitySnapshot?.requiredStatusChecks?.map(
+                  (c) => c.context,
+                ) ?? [],
+              requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
+              requiresCodeOwnerReview:
+                capabilitySnapshot?.requiresCodeOwnerReview ?? false,
             },
           ],
-        })) as PrCreationFullResult;
-        currentState = "pr_created";
-      }
-    } else if (phase === "pr_tracking") {
-      const trackingResult = (await executeChild("prTrackingPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
+        })) as PrTrackingResult;
+
+        if (trackingResult.outcome === "merge_ready") {
+          currentState = "merge_ready";
+
+          // ─── MERGE EXECUTION ───
+          const mergeActivities = proxyActivities<MergeActivities>({
+            startToCloseTimeout: "60s",
+            retry: { maximumAttempts: 2 },
+          });
+
+          const taskActivities = proxyActivities<
+            Pick<TaskActivities, "transitionTaskState">
+          >({
+            startToCloseTimeout: "30s",
+            retry: { maximumAttempts: 3 },
+          });
+
+          // Pre-merge safety check
+          const precheck = await mergeActivities.checkMergeReadiness({
             owner: input.repoOwner,
             repo: input.repoName,
             prNumber: prResult?.prNumber ?? 0,
-            prNodeId: prResult?.prNodeId ?? "",
-            headSha: implementResult?.headSha ?? "",
-            baseBranch: capabilitySnapshot?.defaultBranch ?? "main",
+            expectedHeadSha: implementResult?.headSha ?? "",
             requiredChecks:
               capabilitySnapshot?.requiredStatusChecks?.map((c) => c.context) ??
               [],
             requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
-            requiresCodeOwnerReview:
-              capabilitySnapshot?.requiresCodeOwnerReview ?? false,
-          },
-        ],
-      })) as PrTrackingResult;
+          });
 
-      if (trackingResult.outcome === "merge_ready") {
-        currentState = "merge_ready";
-
-        // ─── MERGE EXECUTION ───
-        const mergeActivities = proxyActivities<MergeActivities>({
-          startToCloseTimeout: "60s",
-          retry: { maximumAttempts: 2 },
-        });
-
-        const taskActivities = proxyActivities<
-          Pick<TaskActivities, "transitionTaskState">
-        >({
-          startToCloseTimeout: "30s",
-          retry: { maximumAttempts: 3 },
-        });
-
-        // Pre-merge safety check
-        const precheck = await mergeActivities.checkMergeReadiness({
-          owner: input.repoOwner,
-          repo: input.repoName,
-          prNumber: prResult?.prNumber ?? 0,
-          expectedHeadSha: implementResult?.headSha ?? "",
-          requiredChecks:
-            capabilitySnapshot?.requiredStatusChecks?.map((c) => c.context) ??
-            [],
-          requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
-        });
-
-        if (!precheck.ready) {
-          await taskActivities.transitionTaskState(
-            input.taskId,
-            "failed",
-            "system",
-            { phase: "merge", blockers: precheck.blockers },
-          );
-          currentState = "failed";
-          break;
-        }
-
-        // Execute merge
-        const prNumber = prResult?.prNumber ?? 0;
-        const mergeResult = await mergeActivities.mergePullRequest({
-          owner: input.repoOwner,
-          repo: input.repoName,
-          prNumber,
-          prNodeId: prResult?.prNodeId ?? "",
-          expectedHeadSha: implementResult?.headSha ?? "",
-          mergeMethod: selectMergeMethod(capabilitySnapshot),
-          commitTitle: `factory: ${input.objective.slice(0, 60)} (#${prNumber})`,
-          useMergeQueue: capabilitySnapshot?.mergeQueue?.enabled ?? false,
-          taskId: input.taskId,
-        });
-
-        if (mergeResult.merged) {
-          mergedSha = mergeResult.sha;
-          currentState = "merged";
-        } else if (mergeResult.mergeQueuePosition != null) {
-          // Enqueued to merge queue — treat as optimistic success
-          currentState = "merged";
-        } else {
-          await taskActivities.transitionTaskState(
-            input.taskId,
-            "failed",
-            "system",
-            { phase: "merge", reason: mergeResult.message },
-          );
-          currentState = "failed";
-          break;
-        }
-
-        // Post-merge cleanup (non-cancellable)
-        await CancellationScope.nonCancellable(async () => {
-          try {
-            await mergeActivities.deleteBranch(
-              input.repoOwner,
-              input.repoName,
-              `factory/${input.taskId}`,
+          if (!precheck.ready) {
+            await taskActivities.transitionTaskState(
+              input.taskId,
+              "failed",
+              "system",
+              { phase: "merge", blockers: precheck.blockers },
             );
-          } catch {
-            // best-effort
+            currentState = "failed";
+            break;
           }
-        });
-        // Continue to learn phase
-      } else if (trackingResult.outcome === "changes_requested") {
-        // External review feedback → loop back to implement
-        addressingFeedback = true;
-        phaseIteration++;
-        if (phaseIteration < input.config.maxImplementationAttempts) {
-          i = PHASE_ORDER.indexOf("implement") - 1;
-          currentState = "changes_requested";
-          continue;
-        }
-        currentState = "failed";
-        break;
-      } else if (trackingResult.outcome === "pr_closed_merged") {
-        currentState = "merged";
-        // Continue to learn
-      } else if (trackingResult.outcome === "pr_closed_unmerged") {
-        currentState = "failed";
-        break;
-      } else if (trackingResult.outcome === "timed_out") {
-        currentState = "failed";
-        break;
-      }
-    } else if (phase === "learn") {
-      const learnResult = (await executeChild("learnPhase", {
-        workflowId: childId,
-        args: [
-          {
-            taskId: input.taskId,
-            repoId: input.repoId,
+
+          // Execute merge
+          const prNumber = prResult?.prNumber ?? 0;
+          const mergeResult = await mergeActivities.mergePullRequest({
             owner: input.repoOwner,
             repo: input.repoName,
-            merged: currentState === "merged",
-            mergedSha,
-            attemptNumber,
-            phaseIteration,
-            totalCostCents: costCents,
-            evidenceLocator,
-            startedAt,
-            completedAt: new Date().toISOString(),
-            filesChanged:
-              implementResult?.agentResult?.filesModified?.length ?? 0,
-          },
-        ],
-      })) as LearnFullResult;
-      void learnResult;
+            prNumber,
+            prNodeId: prResult?.prNodeId ?? "",
+            expectedHeadSha: implementResult?.headSha ?? "",
+            mergeMethod: selectMergeMethod(capabilitySnapshot),
+            commitTitle: `factory: ${input.objective.slice(0, 60)} (#${prNumber})`,
+            useMergeQueue: capabilitySnapshot?.mergeQueue?.enabled ?? false,
+            taskId: input.taskId,
+          });
+
+          if (mergeResult.merged) {
+            mergedSha = mergeResult.sha;
+            currentState = "merged";
+          } else if (mergeResult.mergeQueuePosition != null) {
+            // Enqueued to merge queue — treat as optimistic success
+            currentState = "merged";
+          } else {
+            await taskActivities.transitionTaskState(
+              input.taskId,
+              "failed",
+              "system",
+              { phase: "merge", reason: mergeResult.message },
+            );
+            currentState = "failed";
+            break;
+          }
+
+          // Post-merge cleanup (non-cancellable)
+          await CancellationScope.nonCancellable(async () => {
+            try {
+              await mergeActivities.deleteBranch(
+                input.repoOwner,
+                input.repoName,
+                `factory/${input.taskId}`,
+              );
+            } catch {
+              // best-effort
+            }
+          });
+          // Continue to learn phase
+        } else if (trackingResult.outcome === "changes_requested") {
+          // External review feedback → loop back to implement
+          addressingFeedback = true;
+          phaseIteration++;
+          if (phaseIteration < input.config.maxImplementationAttempts) {
+            i = PHASE_ORDER.indexOf("implement") - 1;
+            currentState = "changes_requested";
+            continue;
+          }
+          currentState = "failed";
+          break;
+        } else if (trackingResult.outcome === "pr_closed_merged") {
+          currentState = "merged";
+          // Continue to learn
+        } else if (trackingResult.outcome === "pr_closed_unmerged") {
+          currentState = "failed";
+          break;
+        } else if (trackingResult.outcome === "timed_out") {
+          currentState = "failed";
+          break;
+        }
+      } else if (phase === "learn") {
+        const learnResult = (await executeChild("learnPhase", {
+          workflowId: childId,
+          args: [
+            {
+              taskId: input.taskId,
+              repoId: input.repoId,
+              owner: input.repoOwner,
+              repo: input.repoName,
+              merged: currentState === "merged",
+              mergedSha,
+              attemptNumber,
+              phaseIteration,
+              totalCostCents: costCents,
+              evidenceLocator,
+              startedAt,
+              completedAt: new Date().toISOString(),
+              filesChanged:
+                implementResult?.agentResult?.filesModified?.length ?? 0,
+            },
+          ],
+        })) as LearnFullResult;
+        void learnResult;
+      }
     }
+  } catch (error: unknown) {
+    currentState = "failed";
+    failureReason = error instanceof Error ? error.message : String(error);
   }
 
   // ─── Consolidated cleanup ───
@@ -919,7 +935,11 @@ export async function taskOrchestrator(
           input.taskId,
           currentState,
           "system",
-          { phase: "cleanup", finalState: currentState },
+          {
+            phase: "cleanup",
+            finalState: currentState,
+            ...(failureReason ? { error: failureReason } : {}),
+          },
         );
       } catch {
         // may already be in terminal state

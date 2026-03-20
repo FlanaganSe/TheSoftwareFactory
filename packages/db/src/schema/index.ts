@@ -14,3 +14,4 @@ export * from "./environment-states.js";
 export * from "./webhook-deliveries.js";
 export * from "./side-effects.js";
 export * from "./api-keys.js";
+export * from "./capability-snapshots.js";

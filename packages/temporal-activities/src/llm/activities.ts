@@ -1,5 +1,8 @@
+import type { LLMCallAuditEntry, PolicyConfig } from "@software-factory/core";
 import { ApplicationFailure } from "@temporalio/activity";
+import type { RepoMapEntry } from "../indexing/types.js";
 import { type AgentConfig, executeAgent } from "./agent.js";
+import type { FileContent } from "./context.js";
 
 export interface LLMActivityDeps {
   readonly createAgentConfig: (
@@ -15,6 +18,10 @@ export interface AgentStepConfig {
   readonly budgetCents: number;
   readonly maxSteps: number;
   readonly wallClockTimeoutMs: number;
+  readonly containerId: string;
+  readonly repoMap: readonly RepoMapEntry[];
+  readonly relevantFiles: readonly FileContent[];
+  readonly policies: readonly PolicyConfig[];
 }
 
 export interface AgentStepResult {
@@ -25,6 +32,7 @@ export interface AgentStepResult {
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
   readonly guardrailTripped?: string;
+  readonly auditEntries?: readonly LLMCallAuditEntry[];
 }
 
 export function createLLMActivities(deps: LLMActivityDeps) {
@@ -32,6 +40,13 @@ export function createLLMActivities(deps: LLMActivityDeps) {
     async executeAgentStep(
       stepConfig: AgentStepConfig,
     ): Promise<AgentStepResult> {
+      if (!stepConfig.containerId) {
+        throw ApplicationFailure.nonRetryable(
+          "Cannot execute agent: no sandbox container (containerId is empty)",
+          "MISSING_SANDBOX",
+        );
+      }
+
       const agentConfig = await deps.createAgentConfig(stepConfig);
       const result = await executeAgent(agentConfig);
 
@@ -59,6 +74,7 @@ export function createLLMActivities(deps: LLMActivityDeps) {
         totalInputTokens: value.totalInputTokens,
         totalOutputTokens: value.totalOutputTokens,
         guardrailTripped: value.guardrailTripped,
+        auditEntries: value.auditEntries,
       };
     },
   };

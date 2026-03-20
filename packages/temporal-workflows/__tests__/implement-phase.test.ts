@@ -74,6 +74,8 @@ const baseInput = {
   model: "openai/gpt-5.4-nano",
   budgetCents: 1000,
   autonomyLevel: "L1" as const,
+  repoMap: [],
+  policies: [],
 };
 
 beforeAll(async () => {

@@ -71,6 +71,10 @@ export function createApiClient(apiUrl: string, token: string) {
 
     // Health
     getHealth: () => request<HealthResponse>("/health/ready"),
+
+    // Repos
+    getRepos: () => request<RepoListResponse>("/api/repos"),
+    getRepo: (id: string) => request<RepoDetailResponse>(`/api/repos/${id}`),
   };
 }
 
@@ -254,4 +258,25 @@ export interface HealthResponse {
   status: string;
   version: string;
   checks: Record<string, { status: string; latencyMs?: number; error?: string }>;
+}
+
+export interface RepoSummary {
+  id: string;
+  githubOwner: string;
+  githubRepo: string;
+  defaultBranch: string;
+  repoClass: string;
+  autonomyLevel: string;
+  lastScannedAt: string | null;
+}
+
+export interface RepoListResponse {
+  repos: RepoSummary[];
+}
+
+export interface RepoDetailResponse {
+  repo: RepoSummary;
+  latestSnapshot: Record<string, unknown> | null;
+  capturedAt: string | null;
+  sourceRevision: string | null;
 }

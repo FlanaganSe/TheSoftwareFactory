@@ -78,17 +78,13 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
     ? {
         ...createLLMActivities({
           createAgentConfig: async (stepConfig) => {
-            const { createProvider, createAgentTools, createCostTracker } =
-              await import("@software-factory/temporal-activities");
             const providerConfig = {
               apiKey: config.openRouterApiKey ?? "",
               defaultModel: stepConfig.model,
             };
-            const supervisor = (
-              await import("@software-factory/temporal-activities")
-            ).createSandboxSupervisor(docker);
+            const supervisor = createSandboxSupervisor(docker);
             const instance = {
-              containerId: "",
+              containerId: stepConfig.containerId,
               phase: "execution" as const,
               labels: {},
             };
@@ -96,9 +92,9 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
               taskId: stepConfig.taskId,
               objective: stepConfig.objective,
               plan: stepConfig.plan,
-              repoMap: [],
-              relevantFiles: [],
-              policies: [],
+              repoMap: [...stepConfig.repoMap],
+              relevantFiles: [...stepConfig.relevantFiles],
+              policies: [...stepConfig.policies],
               sandbox: supervisor,
               sandboxInstance: instance,
               provider: providerConfig,

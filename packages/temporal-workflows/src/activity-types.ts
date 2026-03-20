@@ -221,6 +221,23 @@ export interface AgentStepConfig {
   readonly budgetCents: number;
   readonly maxSteps: number;
   readonly wallClockTimeoutMs: number;
+  readonly containerId: string;
+  readonly repoMap: readonly RepoMapEntryData[];
+  readonly relevantFiles: readonly FileContentData[];
+  readonly policies: readonly PolicyConfig[];
+}
+
+export interface LLMCallAuditEntryData {
+  readonly model: string;
+  readonly provider: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costCents: number;
+  readonly latencyMs: number;
+  readonly taskId: string;
+  readonly phase: string;
+  readonly finishReason: string;
+  readonly contentHash: string;
 }
 
 export interface AgentStepResult {
@@ -231,6 +248,7 @@ export interface AgentStepResult {
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
   readonly guardrailTripped?: string;
+  readonly auditEntries?: readonly LLMCallAuditEntryData[];
 }
 
 export interface LLMActivities {

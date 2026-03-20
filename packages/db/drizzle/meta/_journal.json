@@ -22,6 +22,13 @@
       "when": 1773887020132,
       "tag": "0002_last_argent",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774042932451,
+      "tag": "0003_nifty_hiroim",
+      "breakpoints": true
     }
   ]
 }

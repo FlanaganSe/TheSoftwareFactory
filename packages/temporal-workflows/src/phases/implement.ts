@@ -19,11 +19,13 @@ import type {
   FileChangeData,
   GitHubActivities,
   LLMActivities,
+  RepoMapEntryData,
   SafetyActivities,
   SandboxActivities,
   SandboxInstanceRef,
   TaskActivities,
 } from "../activity-types.js";
+import type { PolicyConfig } from "@software-factory/core";
 import { approveSignal, rejectSignal } from "../signals.js";
 
 const safetyActivities = proxyActivities<SafetyActivities>({
@@ -65,6 +67,8 @@ export interface ImplementInput {
   readonly model: string;
   readonly budgetCents: number;
   readonly autonomyLevel: AutonomyLevel;
+  readonly repoMap: readonly RepoMapEntryData[];
+  readonly policies: readonly PolicyConfig[];
 }
 
 export interface ImplementResult {
@@ -153,6 +157,10 @@ export async function implementPhase(
     budgetCents: input.budgetCents,
     maxSteps: 50,
     wallClockTimeoutMs: 25 * 60 * 1000, // 25 minutes
+    containerId: input.sandbox.containerId,
+    repoMap: input.repoMap,
+    relevantFiles: [],
+    policies: input.policies,
   });
 
   // Step 5: After agent completes, collect modified files and push

@@ -101,6 +101,7 @@ export type {
   LLMActivities,
   AgentStepConfig,
   AgentStepResult,
+  LLMCallAuditEntryData,
   IndexActivities,
   IndexResultData,
   RepoMapEntryData,

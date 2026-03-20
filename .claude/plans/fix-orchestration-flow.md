@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-20
 **Research:** `.claude/plans/orchestration-flow-research.md`
-**Status:** Draft — decisions confirmed, verified against code
+**Status:** Complete — all 7 milestones implemented (M6+M7 combined)
 
 ---
 
@@ -76,9 +76,10 @@ None. All changes are modifications to existing files following established patt
   - [x] Step 3 — Verify: typecheck clean, 1002 tests pass (8 pre-existing MinIO failures), all 15 E2E tests pass
   Commit: "fix: remove patched() version gates from orchestrator"
 - [x] **M4: Add clone step + fix repo identity in understand phase** — Call `githubActivities.cloneRepo(repoOwner, repoName, repoPath)` before indexing. Delete `deterministicRepoUUID` from capability-scan.ts. The orchestrator already carries `input.repoId` (now a real DB UUID) — all downstream consumers (pr_creation, pr_tracking, evidence) use `input.repoId`, not `snapshot.repoId`. The `scanRepository` function signature stays unchanged; `fetchRepoMetadata` will use a placeholder for the vestigial field.
-  - [ ] Step 1 — Add `cloneRepo` call to understand.ts between state transition and scan; use `cloneResult.headSha` for indexing → verify: `pnpm run typecheck`
-  - [ ] Step 2 — Delete `deterministicRepoUUID` from capability-scan.ts, replace with `crypto.randomUUID()` → verify: `pnpm run typecheck`
-  - [ ] Step 3 — Add `cloneRepo` mock to understand-phase.test.ts → verify: `pnpm run test && pnpm run test:e2e`
+  - [x] Step 1 — Add `cloneRepo` call to understand.ts between state transition and scan; use `cloneResult.headSha` for indexing
+  - [x] Step 2 — Delete `deterministicRepoUUID` from capability-scan.ts, replace with `crypto.randomUUID()`
+  - [x] Step 3 — Add `cloneRepo` mock to understand-phase.test.ts
+  Commit: "fix: add clone step to understand phase and remove dual repo identity"
   Commit: "fix: add clone step to understand phase and remove dual repo identity"
 
 ### Phase C: Wire Missing Components

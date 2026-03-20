@@ -15,6 +15,9 @@ declare module "fastify" {
     temporalAddress?: string;
     temporalClient?: import("@temporalio/client").Client;
     minioEndpoint?: string;
+    // biome-ignore format: keep import on single line for declaration merging
+    credentialBroker?: import("@software-factory/temporal-activities").CredentialBroker;
+    githubInstallationId?: number;
   }
 }
 

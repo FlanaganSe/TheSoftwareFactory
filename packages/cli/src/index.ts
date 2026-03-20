@@ -8,6 +8,7 @@ import { createEvidenceCommand } from "./commands/evidence.js";
 import { createHealthCommand } from "./commands/health.js";
 import { createKillCommand } from "./commands/kill.js";
 import { createRejectCommand } from "./commands/reject.js";
+import { createRepoCommand } from "./commands/repo.js";
 import { createReviewCommand } from "./commands/review.js";
 import { createSafetyCommand } from "./commands/safety.js";
 import { createStatusCommand } from "./commands/status.js";
@@ -50,6 +51,7 @@ program.addCommand(createConfigCommand(getConfig));
 program.addCommand(createHealthCommand(getConfig));
 program.addCommand(createKillCommand(getConfig));
 program.addCommand(createBudgetCommand(getConfig));
+program.addCommand(createRepoCommand(getConfig));
 program.addCommand(createSafetyCommand(getConfig));
 
 program.parse();

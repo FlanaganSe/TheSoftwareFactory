@@ -304,7 +304,7 @@ software-factory/
   - [x] Step 4 — Write all unit tests (governance-filter, symbol-extractor, import-extractor, repo-map, parser) + db tests (index-repository) → verify: `pnpm test`
   - [x] Step 5 — Final verification (typecheck + lint + test all pass) → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add code indexing pipeline with tree-sitter parsing, symbol extraction, and PageRank repo map"
-- [ ] **M8: Observer Mode CLI** — `factory repo scan` command producing readiness report with setup contract generation
+- [x] **M8: Observer Mode CLI** — `factory repo scan` command producing readiness report with setup contract generation
 
 ### Phase 2: Guided Execution — *"The agent can now write code"*
 

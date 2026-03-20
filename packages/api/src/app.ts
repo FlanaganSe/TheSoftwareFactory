@@ -4,6 +4,7 @@ import { apiKeyRoutes } from "./routes/api-keys.js";
 import { eventRoutes } from "./routes/events.js";
 import { healthRoutes } from "./routes/health.js";
 import { metricsRoutes } from "./routes/metrics.js";
+import { repoRoutes } from "./routes/repos.js";
 import { safetyRoutes } from "./routes/safety.js";
 import { setupRoutes } from "./routes/setup.js";
 import { taskRoutes } from "./routes/tasks.js";
@@ -19,6 +20,9 @@ export interface AppConfig {
   readonly redisUrl?: string;
   readonly temporalAddress?: string;
   readonly minioEndpoint?: string;
+  readonly githubAppId?: string;
+  readonly githubPrivateKey?: string;
+  readonly githubInstallationId?: number;
 }
 
 export async function startApp(config: AppConfig): Promise<void> {
@@ -33,6 +37,9 @@ export async function startApp(config: AppConfig): Promise<void> {
     redisUrl: config.redisUrl,
     temporalAddress: config.temporalAddress,
     minioEndpoint: config.minioEndpoint,
+    githubAppId: config.githubAppId,
+    githubPrivateKey: config.githubPrivateKey,
+    githubInstallationId: config.githubInstallationId,
   });
 
   // Connect Temporal client if address is provided
@@ -67,6 +74,7 @@ export async function startApp(config: AppConfig): Promise<void> {
   await server.register(taskRoutes);
   await server.register(safetyRoutes);
   await server.register(setupRoutes);
+  await server.register(repoRoutes);
   await server.register(eventRoutes);
 
   // Seed admin key on first run
@@ -103,6 +111,11 @@ if (databaseUrl) {
     redisUrl: process.env.REDIS_URL,
     temporalAddress: process.env.TEMPORAL_ADDRESS,
     minioEndpoint: process.env.MINIO_ENDPOINT,
+    githubAppId: process.env.GITHUB_APP_ID,
+    githubPrivateKey: process.env.GITHUB_PRIVATE_KEY,
+    githubInstallationId: process.env.GITHUB_INSTALLATION_ID
+      ? Number(process.env.GITHUB_INSTALLATION_ID)
+      : undefined,
     logger: true,
   }).catch((err) => {
     console.error("Failed to start app:", err);

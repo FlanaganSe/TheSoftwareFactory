@@ -92,6 +92,33 @@ export interface SafetyStatusResponse {
   readonly dailyCost: DailyCostResponse;
 }
 
+export interface RepoSummary {
+  readonly id: string;
+  readonly githubOwner: string;
+  readonly githubRepo: string;
+  readonly defaultBranch: string;
+  readonly repoClass: string;
+  readonly autonomyLevel: string;
+  readonly lastScannedAt: string | null;
+}
+
+export interface RepoListResponse {
+  readonly repos: readonly RepoSummary[];
+}
+
+export interface RepoDetailResponse {
+  readonly repo: RepoSummary;
+  readonly latestSnapshot: Record<string, unknown> | null;
+  readonly capturedAt: string | null;
+  readonly sourceRevision: string | null;
+}
+
+export interface ScanResponse {
+  readonly repo: RepoSummary;
+  readonly snapshot: Record<string, unknown>;
+  readonly capturedAt: string;
+}
+
 export interface ApiError {
   readonly error: {
     readonly code: string;
@@ -123,6 +150,9 @@ export interface ApiClient {
   setDailyBudget(budgetCents: number): Promise<void>;
   overrideTaskBudget(taskId: string, budgetCents: number): Promise<void>;
   getTaskCost(taskId: string): Promise<TaskCostResponse>;
+  listRepos(): Promise<RepoListResponse>;
+  getRepo(repoId: string): Promise<RepoDetailResponse>;
+  scanRepo(owner: string, repo: string): Promise<ScanResponse>;
 }
 
 class ApiClientError extends Error {
@@ -311,6 +341,18 @@ export function createApiClient(config: CLIConfig): ApiClient {
         "GET",
         `/api/safety/costs/task/${taskId}`,
       );
+    },
+
+    async listRepos(): Promise<RepoListResponse> {
+      return request<RepoListResponse>("GET", "/api/repos");
+    },
+
+    async getRepo(repoId: string): Promise<RepoDetailResponse> {
+      return request<RepoDetailResponse>("GET", `/api/repos/${repoId}`);
+    },
+
+    async scanRepo(owner: string, repo: string): Promise<ScanResponse> {
+      return request<ScanResponse>("POST", "/api/repos/scan", { owner, repo });
     },
   };
 }

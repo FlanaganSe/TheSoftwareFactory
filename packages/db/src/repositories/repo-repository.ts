@@ -1,6 +1,6 @@
 import type { FactoryResult } from "@software-factory/core";
 import { createFactoryError } from "@software-factory/core";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { err, ok } from "neverthrow";
 import type { DbInstance } from "../connection.js";
 import { repos } from "../schema/repos.js";
@@ -100,6 +100,41 @@ export async function getOrCreateRepo(
   if (retried.isOk()) return retried;
 
   return created;
+}
+
+export async function updateRepoFromScan(
+  db: DbInstance,
+  repoId: string,
+  updates: { readonly repoClass?: string; readonly defaultBranch?: string },
+): Promise<FactoryResult<Repo>> {
+  try {
+    const [row] = await db
+      .update(repos)
+      .set({
+        ...(updates.repoClass !== undefined && {
+          repoClass: updates.repoClass,
+        }),
+        ...(updates.defaultBranch !== undefined && {
+          defaultBranch: updates.defaultBranch,
+        }),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(repos.id, repoId))
+      .returning();
+    if (!row) {
+      return err(
+        createFactoryError("unknown_internal", `Repo not found: ${repoId}`),
+      );
+    }
+    return ok(row);
+  } catch (e) {
+    return err(
+      createFactoryError(
+        "unknown_internal",
+        `Failed to update repo from scan: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+  }
 }
 
 export async function listRepos(
