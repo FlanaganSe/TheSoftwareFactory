@@ -55,6 +55,21 @@ export async function createIndexVersion(
   commitSha: string,
 ): Promise<FactoryResult<IndexVersion>> {
   try {
+    // Return existing index if one already exists for this repo+commit
+    const existing = await db
+      .select()
+      .from(codeIndexVersions)
+      .where(
+        and(
+          eq(codeIndexVersions.repoId, repoId),
+          eq(codeIndexVersions.commitSha, commitSha),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) {
+      return ok(existing[0]);
+    }
+
     const [row] = await db
       .insert(codeIndexVersions)
       .values({ repoId, commitSha, status: "building" })

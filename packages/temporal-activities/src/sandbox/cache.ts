@@ -22,7 +22,7 @@ export function computeCacheKey(config: SandboxCacheConfig): string {
 }
 
 function safeSlug(repoSlug: string): string {
-  return repoSlug.replaceAll("/", "-");
+  return repoSlug.replaceAll("/", "-").toLowerCase();
 }
 
 function cacheImageTag(repoSlug: string, cacheKey: string): string {

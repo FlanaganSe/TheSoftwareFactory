@@ -391,7 +391,9 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       };
 
       try {
-        const handle = temporalClient.workflow.getHandle(`task-${id}`);
+        // Signal the child setup workflow, not the parent orchestrator —
+        // the approve_setup handler is registered in setupPhase
+        const handle = temporalClient.workflow.getHandle(`task-${id}-setup`);
         await handle.signal("approve_setup", {
           contract,
           actor: request.actor.actorId,

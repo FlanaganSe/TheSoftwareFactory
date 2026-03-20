@@ -1,6 +1,16 @@
+import { createRequire } from "node:module";
 import { loadWorkerConfig } from "./config.js";
 import { logger } from "./logger.js";
 import { createWorker } from "./worker.js";
+
+// Fix: docker-modem's redirect handler is broken for Unix socket connections.
+// Docker Desktop for Mac returns 3xx redirects for certain API calls (e.g. exec).
+// The redirect handler constructs a URL without the socketPath, causing DNS lookup
+// for "containers" (parsed from the Docker API path). Disabling redirects is safe —
+// the Docker API over Unix sockets should never require redirect following.
+const require_ = createRequire(import.meta.url);
+const dockerModemHttp = require_("docker-modem/lib/http");
+dockerModemHttp.maxRedirects = 0;
 
 async function main(): Promise<void> {
   const config = loadWorkerConfig();
