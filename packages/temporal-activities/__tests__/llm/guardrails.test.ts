@@ -159,6 +159,27 @@ describe("createGuardrails", () => {
       const fp2 = g.computeFingerprint(new Map([["b.ts", "hash1"]]), 5, 2, 1);
       expect(fp1).not.toBe(fp2);
     });
+
+    it("produces different output for different actionCount", () => {
+      const g = createGuardrails();
+      const fp1 = g.computeFingerprint(new Map(), 0, 0, 0, 3);
+      const fp2 = g.computeFingerprint(new Map(), 0, 0, 0, 6);
+      expect(fp1).not.toBe(fp2);
+    });
+  });
+
+  describe("no_progress with actionCount", () => {
+    it("does not trip during read-only exploration when actionCount grows", () => {
+      const g = createGuardrails({ noProgressThreshold: 3 });
+      // Simulate 3 steps of read-only exploration: no files written,
+      // but auditLog.length grows each step (agent is reading files)
+      const fp1 = g.computeFingerprint(new Map(), 0, 0, 0, 2);
+      const fp2 = g.computeFingerprint(new Map(), 0, 0, 0, 5);
+      const fp3 = g.computeFingerprint(new Map(), 0, 0, 0, 8);
+      const state = makeState({ stateFingerprints: [fp1, fp2, fp3] });
+      const trip = g.checkAfterStep(state);
+      expect(trip).toBeNull();
+    });
   });
 
   describe("computeToolCallHash", () => {

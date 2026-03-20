@@ -109,12 +109,14 @@ export function createGuardrails(partial?: Partial<GuardrailConfig>) {
     testPassCount: number,
     testFailCount: number,
     lintErrorCount: number,
+    actionCount: number = 0,
   ): string {
     const data = JSON.stringify({
       modifiedFilePaths: [...modifiedFiles.keys()].sort(),
       testPassCount,
       testFailCount,
       lintErrorCount,
+      actionCount,
     });
     return createHash("sha256").update(data).digest("hex");
   }

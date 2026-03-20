@@ -222,7 +222,13 @@ export async function executeAgent(
             if (typeof p === "string") modifiedFiles.set(p, entry.result);
           }
         }
-        const fp = guardrails.computeFingerprint(modifiedFiles, 0, 0, 0);
+        const fp = guardrails.computeFingerprint(
+          modifiedFiles,
+          0,
+          0,
+          0,
+          auditLog.length,
+        );
         guardrailState.stateFingerprints.push(fp);
 
         // Check guardrails
