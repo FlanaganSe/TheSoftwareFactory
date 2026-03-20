@@ -93,8 +93,11 @@ None. All changes are modifications to existing files following established patt
 
 ### Phase D: Tests and Docs
 
-- [ ] **M6: Update tests** — Update E2E mock activities / helpers so intake works with pre-existing tasks. Update API tests to verify new submission path creates repo+task rows. Add test for approve-setup route.
-- [ ] **M7: Update README and docs** — Fix task submission instructions, document GitHub App setup flow, remove references to nonexistent routes.
+- [ ] **M6+M7: Submission path tests + README fix** — Direct DB-level integration tests for getOrCreateRepo+createTask+listActiveTasks path. Fix README "Using Software Factory" section.
+  - [ ] Step 1 — Create `packages/api/__tests__/submission-path.test.ts` with 4 tests: (a) getOrCreateRepo creates repo, (b) createTask creates task with correct FK, (c) upsert: same repo slug → one repo row, (d) GET /api/tasks returns created task → verify: `pnpm --filter @software-factory/api run test`
+  - [ ] Step 2 — Replace README "Using Software Factory" section (lines 148-198) with accurate docs → verify: `pnpm run lint`
+  - [ ] Step 3 — Full verification → verify: `pnpm run typecheck && pnpm run test`
+  Commit: "test: add submission path integration tests and fix README docs"
 
 ---
 
