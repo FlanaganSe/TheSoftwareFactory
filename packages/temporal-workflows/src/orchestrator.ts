@@ -15,7 +15,6 @@ import {
   condition,
   continueAsNew,
   executeChild,
-  patched,
   proxyActivities,
   setHandler,
   workflowInfo,
@@ -366,247 +365,190 @@ export async function taskOrchestrator(
     } else if (phase === "understand") {
       currentState = "in_progress";
 
-      if (patched("m12-real-understand")) {
-        // Capture TrustedBaseContext if not already done
-        // (This is done as a GitHub activity in the understand phase context)
-        const repoPath = `/tmp/factory/${input.taskId}/repo`;
+      // Capture TrustedBaseContext if not already done
+      // (This is done as a GitHub activity in the understand phase context)
+      const repoPath = `/tmp/factory/${input.taskId}/repo`;
 
-        const result = await executeChild("understandPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              repoId: input.repoId,
-              objective: input.objective,
-              repoOwner: input.repoOwner ?? "",
-              repoName: input.repoName ?? "",
-              repoPath,
-              baseSha: trustedContext?.baseSha ?? "HEAD",
-            },
-          ],
-        });
+      const result = await executeChild("understandPhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            repoId: input.repoId,
+            objective: input.objective,
+            repoOwner: input.repoOwner ?? "",
+            repoName: input.repoName ?? "",
+            repoPath,
+            baseSha: trustedContext?.baseSha ?? "HEAD",
+          },
+        ],
+      });
 
-        understandResult = result;
-        capabilitySnapshot = result.capabilitySnapshot;
-        // Capture trustedContext from understand phase if not already set
-        if (!trustedContext) {
-          trustedContext = result.trustedContext;
-        }
-      } else {
-        await executeChild("understandPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              objective: input.objective,
-              baseSha: "stub-base-sha",
-            },
-          ],
-        });
+      understandResult = result;
+      capabilitySnapshot = result.capabilitySnapshot;
+      // Capture trustedContext from understand phase if not already set
+      if (!trustedContext) {
+        trustedContext = result.trustedContext;
       }
     } else if (phase === "plan") {
-      if (patched("m12-real-plan")) {
-        const defaultModel = "anthropic/claude-sonnet-4-20250514";
-        const result = await executeChild("planPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              objective: input.objective,
-              repoMap: understandResult?.repoMap ?? [],
-              relevantFiles: [],
-              model: defaultModel,
-            },
-          ],
-        });
+      const defaultModel = "anthropic/claude-sonnet-4-20250514";
+      const planResult = await executeChild("planPhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            objective: input.objective,
+            repoMap: understandResult?.repoMap ?? [],
+            relevantFiles: [],
+            model: defaultModel,
+          },
+        ],
+      });
 
-        planText = result.plan;
-      } else {
-        await executeChild("planPhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId, objective: input.objective }],
-        });
-      }
+      planText = planResult.plan;
     } else if (phase === "setup") {
-      if (patched("m12-real-setup")) {
-        const repoPath = `/tmp/factory/${input.taskId}/repo`;
-        const repoSlug = `${input.repoOwner ?? ""}/${input.repoName ?? ""}`;
+      const setupRepoPath = `/tmp/factory/${input.taskId}/repo`;
+      const repoSlug = `${input.repoOwner ?? ""}/${input.repoName ?? ""}`;
 
-        const defaultContext: TrustedBaseContext = trustedContext ?? {
-          baseSha: "HEAD",
-          setupContract: null,
-          policySnapshot: [],
-          behavioralControlFiles: {},
-          validationCommandSources: [],
-          capturedAt: new Date().toISOString(),
-        };
+      const defaultContext: TrustedBaseContext = trustedContext ?? {
+        baseSha: "HEAD",
+        setupContract: null,
+        policySnapshot: [],
+        behavioralControlFiles: {},
+        validationCommandSources: [],
+        capturedAt: new Date().toISOString(),
+      };
 
-        setupResult = await executeChild("setupPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              repoId: input.repoId,
-              repoPath,
-              repoSlug,
-              trustedContext: defaultContext,
-            },
-          ],
-        });
-      } else {
-        await executeChild("setupPhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId }],
-        });
-      }
+      setupResult = await executeChild("setupPhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            repoId: input.repoId,
+            repoPath: setupRepoPath,
+            repoSlug,
+            trustedContext: defaultContext,
+          },
+        ],
+      });
     } else if (phase === "implement") {
-      if (patched("m12-real-implement")) {
-        const branchName = `factory/${input.taskId}`;
-        const defaultModel = "anthropic/claude-sonnet-4-20250514";
-        const baseSha = trustedContext?.baseSha ?? "HEAD";
+      const branchName = `factory/${input.taskId}`;
+      const implModel = "anthropic/claude-sonnet-4-20250514";
+      const baseSha = trustedContext?.baseSha ?? "HEAD";
 
-        const result = await executeChild("implementPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              objective: input.objective,
-              plan: planText ?? input.objective,
-              iteration: phaseIteration,
-              sandbox: setupResult?.sandboxInstance ?? {
-                containerId: "",
-                phase: "execution",
-                labels: {},
-              },
-              repoOwner: input.repoOwner ?? "",
-              repoName: input.repoName ?? "",
-              branchName,
-              baseSha,
-              model: defaultModel,
-              budgetCents: costBudgetCents,
-              autonomyLevel: input.autonomyLevel,
+      const implResult = await executeChild("implementPhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            objective: input.objective,
+            plan: planText ?? input.objective,
+            iteration: phaseIteration,
+            sandbox: setupResult?.sandboxInstance ?? {
+              containerId: "",
+              phase: "execution",
+              labels: {},
             },
-          ],
-        });
+            repoOwner: input.repoOwner ?? "",
+            repoName: input.repoName ?? "",
+            branchName,
+            baseSha,
+            model: implModel,
+            budgetCents: costBudgetCents,
+            autonomyLevel: input.autonomyLevel,
+          },
+        ],
+      });
 
-        implementResult = result;
-        costCents += result.agentResult.totalCostCents;
-      } else {
-        await executeChild("implementPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              objective: input.objective,
-              plan: "stub",
-              iteration: phaseIteration,
-            },
-          ],
-        });
-      }
+      implementResult = implResult;
+      costCents += implResult.agentResult.totalCostCents;
     } else if (phase === "validate") {
-      if (patched("m13-real-validate")) {
-        const defaultContext: TrustedBaseContext = trustedContext ?? {
-          baseSha: "HEAD",
-          setupContract: null,
-          policySnapshot: [],
-          behavioralControlFiles: {},
-          validationCommandSources: [],
-          capturedAt: new Date().toISOString(),
-        };
+      const validateContext: TrustedBaseContext = trustedContext ?? {
+        baseSha: "HEAD",
+        setupContract: null,
+        policySnapshot: [],
+        behavioralControlFiles: {},
+        validationCommandSources: [],
+        capturedAt: new Date().toISOString(),
+      };
 
-        validateResult = await executeChild("validatePhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              repoId: input.repoId,
-              containerId: setupResult?.sandboxInstance?.containerId ?? "",
-              trustedContext: defaultContext,
-              changedFiles: implementResult?.agentResult?.filesModified ?? [],
-              indexVersionId: understandResult?.indexVersionId ?? "",
-              policies: defaultContext.policySnapshot,
-            },
-          ],
-        });
-      } else {
-        await executeChild("validatePhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId }],
-        });
-      }
+      validateResult = await executeChild("validatePhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            repoId: input.repoId,
+            containerId: setupResult?.sandboxInstance?.containerId ?? "",
+            trustedContext: validateContext,
+            changedFiles: implementResult?.agentResult?.filesModified ?? [],
+            indexVersionId: understandResult?.indexVersionId ?? "",
+            policies: validateContext.policySnapshot,
+          },
+        ],
+      });
     } else if (phase === "evidence") {
-      if (patched("m14-real-evidence")) {
-        const defaultContext: TrustedBaseContext = trustedContext ?? {
-          baseSha: "HEAD",
-          setupContract: null,
-          policySnapshot: [],
-          behavioralControlFiles: {},
-          validationCommandSources: [],
-          capturedAt: new Date().toISOString(),
-        };
+      const evidenceContext: TrustedBaseContext = trustedContext ?? {
+        baseSha: "HEAD",
+        setupContract: null,
+        policySnapshot: [],
+        behavioralControlFiles: {},
+        validationCommandSources: [],
+        capturedAt: new Date().toISOString(),
+      };
 
-        const evidenceResult = await executeChild("evidencePhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              repoId: input.repoId,
-              objective: input.objective,
-              attemptNumber,
-              baseSha: defaultContext.baseSha,
-              headSha: implementResult?.headSha ?? defaultContext.baseSha,
-              mergeBaseSha: defaultContext.baseSha,
-              containerId: setupResult?.sandboxInstance?.containerId ?? "",
-              validationResult: validateResult?.validationResult ?? {
-                testResults: {
-                  passed: 0,
-                  failed: 0,
-                  skipped: 0,
-                },
-                lintResults: { errorCount: 0, warningCount: 0 },
-                securityScanResults: {
-                  vulnerabilities: [],
-                  totalFindings: 0,
-                  criticalCount: 0,
-                  highCount: 0,
-                },
-                blastRadius: { files: 0, packages: 0 },
-                protectedSurfaceEdits: [],
-                migrationImpact: {
-                  hasMigrations: false,
-                  migrationFiles: [],
-                  schemaChanges: [],
-                },
-                revertabilityClass: "clean_revert",
-                commandsRun: [],
+      const evidenceResult = await executeChild("evidencePhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            repoId: input.repoId,
+            objective: input.objective,
+            attemptNumber,
+            baseSha: evidenceContext.baseSha,
+            headSha: implementResult?.headSha ?? evidenceContext.baseSha,
+            mergeBaseSha: evidenceContext.baseSha,
+            containerId: setupResult?.sandboxInstance?.containerId ?? "",
+            validationResult: validateResult?.validationResult ?? {
+              testResults: {
+                passed: 0,
+                failed: 0,
+                skipped: 0,
               },
-              agentResult: {
-                filesModified:
-                  implementResult?.agentResult?.filesModified ?? [],
-                totalCostCents:
-                  implementResult?.agentResult?.totalCostCents ?? 0,
+              lintResults: { errorCount: 0, warningCount: 0 },
+              securityScanResults: {
+                vulnerabilities: [],
+                totalFindings: 0,
+                criticalCount: 0,
+                highCount: 0,
               },
-              capabilitySnapshot: {
-                requiredStatusChecks:
-                  capabilitySnapshot?.requiredStatusChecks ?? [],
+              blastRadius: { files: 0, packages: 0 },
+              protectedSurfaceEdits: [],
+              migrationImpact: {
+                hasMigrations: false,
+                migrationFiles: [],
+                schemaChanges: [],
               },
-              changedFiles: implementResult?.agentResult?.filesModified ?? [],
-              policies: defaultContext.policySnapshot,
-              codeownersEntries: capabilitySnapshot?.codeowners?.entries ?? [],
-              indexVersionId: understandResult?.indexVersionId ?? "",
+              revertabilityClass: "clean_revert",
+              commandsRun: [],
             },
-          ],
-        });
+            agentResult: {
+              filesModified: implementResult?.agentResult?.filesModified ?? [],
+              totalCostCents: implementResult?.agentResult?.totalCostCents ?? 0,
+            },
+            capabilitySnapshot: {
+              requiredStatusChecks:
+                capabilitySnapshot?.requiredStatusChecks ?? [],
+            },
+            changedFiles: implementResult?.agentResult?.filesModified ?? [],
+            policies: evidenceContext.policySnapshot,
+            codeownersEntries: capabilitySnapshot?.codeowners?.entries ?? [],
+            indexVersionId: understandResult?.indexVersionId ?? "",
+          },
+        ],
+      });
 
-        evidenceLocator = evidenceResult.locator;
-        currentState = "evidence_ready";
-      } else {
-        await executeChild("evidencePhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId }],
-        });
-      }
+      evidenceLocator = evidenceResult.locator;
+      currentState = "evidence_ready";
     } else if (phase === "review") {
       if (addressingFeedback) {
         // Skip internal review when re-entering after external review feedback.
@@ -651,8 +593,8 @@ export async function taskOrchestrator(
         // Skip PR creation on feedback loop — PR already exists.
         // The implement phase pushed new commits to the existing branch.
         currentState = "pr_created";
-      } else if (patched("m16-real-pr-creation")) {
-        const defaultContext: TrustedBaseContext = trustedContext ?? {
+      } else {
+        const prContext: TrustedBaseContext = trustedContext ?? {
           baseSha: "HEAD",
           setupContract: null,
           policySnapshot: [],
@@ -690,11 +632,11 @@ export async function taskOrchestrator(
               repo: input.repoName,
               candidateBranch: `factory/${input.taskId}`,
               baseBranch:
-                defaultContext.baseSha === "HEAD"
+                prContext.baseSha === "HEAD"
                   ? "main"
                   : (capabilitySnapshot?.defaultBranch ?? "main"),
               objective: input.objective,
-              headSha: implementResult?.headSha ?? defaultContext.baseSha,
+              headSha: implementResult?.headSha ?? prContext.baseSha,
               attemptNumber,
               evidenceLocator: evidenceLocator ?? {
                 taskId: input.taskId,
@@ -762,183 +704,157 @@ export async function taskOrchestrator(
           ],
         })) as PrCreationFullResult;
         currentState = "pr_created";
-      } else {
-        await executeChild("prCreationPhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId }],
-        });
-        currentState = "pr_created";
       }
     } else if (phase === "pr_tracking") {
-      if (patched("m17-real-pr-tracking")) {
-        const trackingResult = (await executeChild("prTrackingPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              repoId: input.repoId,
-              owner: input.repoOwner,
-              repo: input.repoName,
-              prNumber: prResult?.prNumber ?? 0,
-              prNodeId: prResult?.prNodeId ?? "",
-              headSha: implementResult?.headSha ?? "",
-              baseBranch: capabilitySnapshot?.defaultBranch ?? "main",
-              requiredChecks:
-                capabilitySnapshot?.requiredStatusChecks?.map(
-                  (c) => c.context,
-                ) ?? [],
-              requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
-              requiresCodeOwnerReview:
-                capabilitySnapshot?.requiresCodeOwnerReview ?? false,
-            },
-          ],
-        })) as PrTrackingResult;
+      const trackingResult = (await executeChild("prTrackingPhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            repoId: input.repoId,
+            owner: input.repoOwner,
+            repo: input.repoName,
+            prNumber: prResult?.prNumber ?? 0,
+            prNodeId: prResult?.prNodeId ?? "",
+            headSha: implementResult?.headSha ?? "",
+            baseBranch: capabilitySnapshot?.defaultBranch ?? "main",
+            requiredChecks:
+              capabilitySnapshot?.requiredStatusChecks?.map((c) => c.context) ??
+              [],
+            requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
+            requiresCodeOwnerReview:
+              capabilitySnapshot?.requiresCodeOwnerReview ?? false,
+          },
+        ],
+      })) as PrTrackingResult;
 
-        if (trackingResult.outcome === "merge_ready") {
-          currentState = "merge_ready";
+      if (trackingResult.outcome === "merge_ready") {
+        currentState = "merge_ready";
 
-          if (patched("m18-merge-execution")) {
-            // ─── MERGE EXECUTION ───
-            const mergeActivities = proxyActivities<MergeActivities>({
-              startToCloseTimeout: "60s",
-              retry: { maximumAttempts: 2 },
-            });
+        // ─── MERGE EXECUTION ───
+        const mergeActivities = proxyActivities<MergeActivities>({
+          startToCloseTimeout: "60s",
+          retry: { maximumAttempts: 2 },
+        });
 
-            const taskActivities = proxyActivities<
-              Pick<TaskActivities, "transitionTaskState">
-            >({
-              startToCloseTimeout: "30s",
-              retry: { maximumAttempts: 3 },
-            });
+        const taskActivities = proxyActivities<
+          Pick<TaskActivities, "transitionTaskState">
+        >({
+          startToCloseTimeout: "30s",
+          retry: { maximumAttempts: 3 },
+        });
 
-            // Pre-merge safety check
-            const precheck = await mergeActivities.checkMergeReadiness({
-              owner: input.repoOwner,
-              repo: input.repoName,
-              prNumber: prResult?.prNumber ?? 0,
-              expectedHeadSha: implementResult?.headSha ?? "",
-              requiredChecks:
-                capabilitySnapshot?.requiredStatusChecks?.map(
-                  (c) => c.context,
-                ) ?? [],
-              requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
-            });
+        // Pre-merge safety check
+        const precheck = await mergeActivities.checkMergeReadiness({
+          owner: input.repoOwner,
+          repo: input.repoName,
+          prNumber: prResult?.prNumber ?? 0,
+          expectedHeadSha: implementResult?.headSha ?? "",
+          requiredChecks:
+            capabilitySnapshot?.requiredStatusChecks?.map((c) => c.context) ??
+            [],
+          requiredReviewCount: capabilitySnapshot?.requiredReviewCount ?? 0,
+        });
 
-            if (!precheck.ready) {
-              await taskActivities.transitionTaskState(
-                input.taskId,
-                "failed",
-                "system",
-                { phase: "merge", blockers: precheck.blockers },
-              );
-              currentState = "failed";
-              break;
-            }
-
-            // Execute merge
-            const prNumber = prResult?.prNumber ?? 0;
-            const mergeResult = await mergeActivities.mergePullRequest({
-              owner: input.repoOwner,
-              repo: input.repoName,
-              prNumber,
-              prNodeId: prResult?.prNodeId ?? "",
-              expectedHeadSha: implementResult?.headSha ?? "",
-              mergeMethod: selectMergeMethod(capabilitySnapshot),
-              commitTitle: `factory: ${input.objective.slice(0, 60)} (#${prNumber})`,
-              useMergeQueue: capabilitySnapshot?.mergeQueue?.enabled ?? false,
-              taskId: input.taskId,
-            });
-
-            if (mergeResult.merged) {
-              mergedSha = mergeResult.sha;
-              currentState = "merged";
-            } else if (mergeResult.mergeQueuePosition != null) {
-              // Enqueued to merge queue — treat as optimistic success
-              currentState = "merged";
-            } else {
-              await taskActivities.transitionTaskState(
-                input.taskId,
-                "failed",
-                "system",
-                { phase: "merge", reason: mergeResult.message },
-              );
-              currentState = "failed";
-              break;
-            }
-
-            // Post-merge cleanup (non-cancellable)
-            await CancellationScope.nonCancellable(async () => {
-              try {
-                await mergeActivities.deleteBranch(
-                  input.repoOwner,
-                  input.repoName,
-                  `factory/${input.taskId}`,
-                );
-              } catch {
-                // best-effort
-              }
-            });
-          }
-          // Continue to learn phase
-        } else if (trackingResult.outcome === "changes_requested") {
-          // External review feedback → loop back to implement
-          addressingFeedback = true;
-          phaseIteration++;
-          if (phaseIteration < input.config.maxImplementationAttempts) {
-            i = PHASE_ORDER.indexOf("implement") - 1;
-            currentState = "changes_requested";
-            continue;
-          }
-          currentState = "failed";
-          break;
-        } else if (trackingResult.outcome === "pr_closed_merged") {
-          currentState = "merged";
-          // Continue to learn
-        } else if (trackingResult.outcome === "pr_closed_unmerged") {
-          currentState = "failed";
-          break;
-        } else if (trackingResult.outcome === "timed_out") {
+        if (!precheck.ready) {
+          await taskActivities.transitionTaskState(
+            input.taskId,
+            "failed",
+            "system",
+            { phase: "merge", blockers: precheck.blockers },
+          );
           currentState = "failed";
           break;
         }
-      } else {
-        // Old stub
-        await executeChild("prTrackingPhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId, prNumber: 0 }],
+
+        // Execute merge
+        const prNumber = prResult?.prNumber ?? 0;
+        const mergeResult = await mergeActivities.mergePullRequest({
+          owner: input.repoOwner,
+          repo: input.repoName,
+          prNumber,
+          prNodeId: prResult?.prNodeId ?? "",
+          expectedHeadSha: implementResult?.headSha ?? "",
+          mergeMethod: selectMergeMethod(capabilitySnapshot),
+          commitTitle: `factory: ${input.objective.slice(0, 60)} (#${prNumber})`,
+          useMergeQueue: capabilitySnapshot?.mergeQueue?.enabled ?? false,
+          taskId: input.taskId,
         });
+
+        if (mergeResult.merged) {
+          mergedSha = mergeResult.sha;
+          currentState = "merged";
+        } else if (mergeResult.mergeQueuePosition != null) {
+          // Enqueued to merge queue — treat as optimistic success
+          currentState = "merged";
+        } else {
+          await taskActivities.transitionTaskState(
+            input.taskId,
+            "failed",
+            "system",
+            { phase: "merge", reason: mergeResult.message },
+          );
+          currentState = "failed";
+          break;
+        }
+
+        // Post-merge cleanup (non-cancellable)
+        await CancellationScope.nonCancellable(async () => {
+          try {
+            await mergeActivities.deleteBranch(
+              input.repoOwner,
+              input.repoName,
+              `factory/${input.taskId}`,
+            );
+          } catch {
+            // best-effort
+          }
+        });
+        // Continue to learn phase
+      } else if (trackingResult.outcome === "changes_requested") {
+        // External review feedback → loop back to implement
+        addressingFeedback = true;
+        phaseIteration++;
+        if (phaseIteration < input.config.maxImplementationAttempts) {
+          i = PHASE_ORDER.indexOf("implement") - 1;
+          currentState = "changes_requested";
+          continue;
+        }
+        currentState = "failed";
+        break;
+      } else if (trackingResult.outcome === "pr_closed_merged") {
         currentState = "merged";
+        // Continue to learn
+      } else if (trackingResult.outcome === "pr_closed_unmerged") {
+        currentState = "failed";
+        break;
+      } else if (trackingResult.outcome === "timed_out") {
+        currentState = "failed";
+        break;
       }
     } else if (phase === "learn") {
-      if (patched("m18-real-learn")) {
-        const learnResult = (await executeChild("learnPhase", {
-          workflowId: childId,
-          args: [
-            {
-              taskId: input.taskId,
-              repoId: input.repoId,
-              owner: input.repoOwner,
-              repo: input.repoName,
-              merged: currentState === "merged",
-              mergedSha,
-              attemptNumber,
-              phaseIteration,
-              totalCostCents: costCents,
-              evidenceLocator,
-              startedAt,
-              completedAt: new Date().toISOString(),
-              filesChanged:
-                implementResult?.agentResult?.filesModified?.length ?? 0,
-            },
-          ],
-        })) as LearnFullResult;
-        void learnResult;
-      } else {
-        await executeChild("learnPhase", {
-          workflowId: childId,
-          args: [{ taskId: input.taskId }],
-        });
-      }
+      const learnResult = (await executeChild("learnPhase", {
+        workflowId: childId,
+        args: [
+          {
+            taskId: input.taskId,
+            repoId: input.repoId,
+            owner: input.repoOwner,
+            repo: input.repoName,
+            merged: currentState === "merged",
+            mergedSha,
+            attemptNumber,
+            phaseIteration,
+            totalCostCents: costCents,
+            evidenceLocator,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            filesChanged:
+              implementResult?.agentResult?.filesModified?.length ?? 0,
+          },
+        ],
+      })) as LearnFullResult;
+      void learnResult;
     }
   }
 
@@ -950,74 +866,65 @@ export async function taskOrchestrator(
     void killInfo;
   }
 
-  if (patched("m18-cleanup-consolidation")) {
-    await CancellationScope.nonCancellable(async () => {
-      const safetyActs = proxyActivities<
-        Pick<SafetyActivities, "releaseBranchLease">
-      >({
-        startToCloseTimeout: "15s",
-        retry: { maximumAttempts: 2 },
-      });
+  await CancellationScope.nonCancellable(async () => {
+    const safetyActs = proxyActivities<
+      Pick<SafetyActivities, "releaseBranchLease">
+    >({
+      startToCloseTimeout: "15s",
+      retry: { maximumAttempts: 2 },
+    });
 
-      const sandboxActs = proxyActivities<
-        Pick<SandboxActivities, "destroySandbox">
-      >({
-        startToCloseTimeout: "30s",
-        retry: { maximumAttempts: 2 },
-      });
+    const sandboxActs = proxyActivities<
+      Pick<SandboxActivities, "destroySandbox">
+    >({
+      startToCloseTimeout: "30s",
+      retry: { maximumAttempts: 2 },
+    });
 
-      const taskActs = proxyActivities<
-        Pick<TaskActivities, "transitionTaskState">
-      >({
-        startToCloseTimeout: "30s",
-        retry: { maximumAttempts: 2 },
-      });
+    const taskActs = proxyActivities<
+      Pick<TaskActivities, "transitionTaskState">
+    >({
+      startToCloseTimeout: "30s",
+      retry: { maximumAttempts: 2 },
+    });
 
-      // Release branch lease
-      const branchName = `factory/${input.taskId}`;
+    // Release branch lease
+    const branchName = `factory/${input.taskId}`;
+    try {
+      await safetyActs.releaseBranchLease(branchName, input.taskId);
+    } catch {
+      // best-effort — TTL auto-expires
+    }
+
+    // Destroy sandbox if still alive
+    if (setupResult?.sandboxInstance?.containerId) {
       try {
-        await safetyActs.releaseBranchLease(branchName, input.taskId);
+        await sandboxActs.destroySandbox(
+          setupResult.sandboxInstance.containerId,
+        );
       } catch {
-        // best-effort — TTL auto-expires
+        // best-effort
       }
+    }
 
-      // Destroy sandbox if still alive
-      if (setupResult?.sandboxInstance?.containerId) {
-        try {
-          await sandboxActs.destroySandbox(
-            setupResult.sandboxInstance.containerId,
-          );
-        } catch {
-          // best-effort
-        }
+    // Ensure terminal state is persisted
+    if (
+      currentState === "merged" ||
+      currentState === "failed" ||
+      currentState === "cancelled"
+    ) {
+      try {
+        await taskActs.transitionTaskState(
+          input.taskId,
+          currentState,
+          "system",
+          { phase: "cleanup", finalState: currentState },
+        );
+      } catch {
+        // may already be in terminal state
       }
-
-      // Ensure terminal state is persisted
-      if (
-        currentState === "merged" ||
-        currentState === "failed" ||
-        currentState === "cancelled"
-      ) {
-        try {
-          await taskActs.transitionTaskState(
-            input.taskId,
-            currentState,
-            "system",
-            { phase: "cleanup", finalState: currentState },
-          );
-        } catch {
-          // may already be in terminal state
-        }
-      }
-    });
-  } else if (killed) {
-    // Legacy kill cleanup
-    await CancellationScope.nonCancellable(async () => {
-      if (setupResult?.branchLease) {
-        void setupResult;
-      }
-    });
-  }
+    }
+  });
 
   // Drain all handlers before completing
   await condition(allHandlersFinished);
