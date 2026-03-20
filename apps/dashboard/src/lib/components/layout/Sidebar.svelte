@@ -1,5 +1,12 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { clearApiKey } from "$lib/stores/auth";
+
+  function handleLogout() {
+    clearApiKey();
+    goto("/login");
+  }
 
   const navItems = [
     { href: "/tasks", label: "Review Inbox", icon: "inbox" },
@@ -37,14 +44,14 @@
   </div>
 
   <div class="p-4 border-t border-border">
-    <a
-      href="/login"
+    <button
+      onclick={handleLogout}
       class="flex items-center gap-2 text-xs text-text-muted hover:text-text-secondary transition-colors"
     >
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
       </svg>
       Logout
-    </a>
+    </button>
   </div>
 </nav>

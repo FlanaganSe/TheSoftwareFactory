@@ -16,7 +16,7 @@
   const FILTER_STATES: Record<FilterKey, TaskState[] | null> = {
     all: null,
     review: ["evidence_ready", "changes_requested"],
-    active: ["created", "assigned", "in_progress", "paused", "needs_clarification"],
+    active: ["created", "assigned", "in_progress", "paused", "needs_clarification", "addressing_review_feedback"],
     completed: ["approved", "pr_created", "external_checks_pending", "merge_ready", "merged"],
     failed: ["failed", "cancelled", "external_blocked"],
   };

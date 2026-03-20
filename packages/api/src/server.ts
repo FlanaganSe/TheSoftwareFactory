@@ -35,9 +35,12 @@ export async function createServer(
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(errorHandler);
 
-  // CORS — allow dashboard origin in dev, configurable for production
+  // CORS — allow specific dashboard origins, configurable via env
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
+    : ["http://localhost:5173", "http://localhost:4173"];
   await app.register(cors, {
-    origin: true,
+    origin: allowedOrigins,
     credentials: true,
   });
 
