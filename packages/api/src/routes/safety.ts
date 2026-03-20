@@ -4,7 +4,6 @@ import {
   createKillSwitch,
   createRedisClient,
 } from "@software-factory/temporal-activities";
-import type { Client } from "@temporalio/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.js";
@@ -72,9 +71,7 @@ export async function safetyRoutes(app: FastifyInstance): Promise<void> {
 
       // Signal all running workflows if Temporal is available
       let workflowsSignaled = 0;
-      const temporalClient = (
-        app as FastifyInstance & { temporalClient?: Client }
-      ).temporalClient;
+      const temporalClient = app.temporalClient;
       if (temporalClient) {
         const workflows = temporalClient.workflow.list({
           query: 'ExecutionStatus="Running"',

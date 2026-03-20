@@ -16,6 +16,9 @@ export interface AppConfig {
   readonly databaseUrl: string;
   readonly webhookSecret: string;
   readonly logger: boolean;
+  readonly redisUrl?: string;
+  readonly temporalAddress?: string;
+  readonly minioEndpoint?: string;
 }
 
 export async function startApp(config: AppConfig): Promise<void> {
@@ -27,7 +30,34 @@ export async function startApp(config: AppConfig): Promise<void> {
     logger: config.logger,
     dbConnection,
     webhookSecret: config.webhookSecret,
+    redisUrl: config.redisUrl,
+    temporalAddress: config.temporalAddress,
+    minioEndpoint: config.minioEndpoint,
   });
+
+  // Connect Temporal client if address is provided
+  if (config.temporalAddress) {
+    try {
+      const { Connection, Client } = await import("@temporalio/client");
+      const connection = await Connection.connect({
+        address: config.temporalAddress,
+      });
+      const client = new Client({ connection });
+      server.decorate("temporalClient", client);
+      server.addHook("onClose", async () => {
+        await connection.close();
+      });
+      server.log.info(
+        { address: config.temporalAddress },
+        "Temporal client connected",
+      );
+    } catch (e) {
+      server.log.warn(
+        { error: e instanceof Error ? e.message : String(e) },
+        "Failed to connect Temporal client — task endpoints will return 503",
+      );
+    }
+  }
 
   // Register routes
   await server.register(healthRoutes);
@@ -70,6 +100,9 @@ if (databaseUrl) {
     host: process.env.HOST ?? "0.0.0.0",
     databaseUrl,
     webhookSecret,
+    redisUrl: process.env.REDIS_URL,
+    temporalAddress: process.env.TEMPORAL_ADDRESS,
+    minioEndpoint: process.env.MINIO_ENDPOINT,
     logger: true,
   }).catch((err) => {
     console.error("Failed to start app:", err);

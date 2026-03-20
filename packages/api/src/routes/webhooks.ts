@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { Webhooks } from "@octokit/webhooks";
 import { webhookRepo } from "@software-factory/db";
-import type { Client } from "@temporalio/client";
 import type { FastifyInstance } from "fastify";
 import { dispatchWebhookToWorkflow } from "../webhooks/dispatcher.js";
 
@@ -113,9 +112,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       );
 
       // Dispatch to Temporal workflow (if a running workflow exists for this PR)
-      const temporalClient = (
-        app as FastifyInstance & { temporalClient?: Client }
-      ).temporalClient;
+      const temporalClient = app.temporalClient;
       if (temporalClient && event) {
         try {
           const dispatch = await dispatchWebhookToWorkflow(

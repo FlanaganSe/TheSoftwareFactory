@@ -110,13 +110,14 @@ describe("tasks API", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("GET /api/tasks with auth → 503 (no Temporal)", async () => {
+  it("GET /api/tasks with auth → 200 (empty list from DB)", async () => {
     const res = await ctx.app.inject({
       method: "GET",
       url: "/api/tasks",
       headers: { authorization: `Bearer ${viewerKey}` },
     });
-    expect(res.statusCode).toBe(503);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().tasks).toEqual([]);
   });
 
   it("GET /api/tasks/:id without auth → 401", async () => {

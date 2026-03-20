@@ -13,6 +13,7 @@ declare module "fastify" {
     webhookSecret: string;
     redisUrl?: string;
     temporalAddress?: string;
+    temporalClient?: import("@temporalio/client").Client;
     minioEndpoint?: string;
   }
 }

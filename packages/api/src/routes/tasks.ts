@@ -27,8 +27,7 @@ function getTemporalClient(
   app: FastifyInstance,
   reply: FastifyReply,
 ): Client | null {
-  const temporalClient = (app as FastifyInstance & { temporalClient?: Client })
-    .temporalClient;
+  const temporalClient = app.temporalClient;
   if (!temporalClient) {
     reply.status(503).send({
       error: {
@@ -121,13 +120,28 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     "/api/tasks",
     { preHandler: [authMiddleware] },
-    async (request, reply) => {
-      const temporalClient = getTemporalClient(app, reply);
-      if (!temporalClient) return;
+    async (_request, reply) => {
+      const result = await taskRepo.listActiveTasks(app.db);
+      if (result.isErr()) {
+        reply.status(500).send({
+          error: {
+            code: "internal_error",
+            message: result.error.message,
+          },
+        });
+        return;
+      }
 
-      // For now, return a list from Temporal workflow queries
-      // Full implementation would query the DB
-      reply.status(200).send({ tasks: [] });
+      reply.status(200).send({
+        tasks: result.value.map((t) => ({
+          taskId: t.id,
+          objective: t.objective,
+          status: t.state,
+          repoId: t.repoId,
+          createdAt: t.createdAt.toISOString(),
+          updatedAt: t.updatedAt.toISOString(),
+        })),
+      });
     },
   );
 
