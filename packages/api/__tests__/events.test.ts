@@ -3,20 +3,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDb } from "@software-factory/db";
 import type { DbConnection } from "@software-factory/db";
+import { apiKeyRepo } from "@software-factory/db";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { FastifyInstance } from "fastify";
 import pg from "pg";
-import { apiKeyRoutes } from "../src/routes/api-keys.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eventRoutes } from "../src/routes/events.js";
 import { healthRoutes } from "../src/routes/health.js";
-import { metricsRoutes } from "../src/routes/metrics.js";
-import { setupRoutes } from "../src/routes/setup.js";
-import { taskRoutes } from "../src/routes/tasks.js";
-import { webhookRoutes } from "../src/routes/webhooks.js";
 import { createServer } from "../src/server.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
 const MIGRATION_0 = readFileSync(
   join(__dirname, "../../db/drizzle/0000_wonderful_wallop.sql"),
   "utf8",
@@ -29,28 +26,24 @@ const MIGRATION_2 = readFileSync(
   join(__dirname, "../../db/drizzle/0002_last_argent.sql"),
   "utf8",
 );
-
 const INIT_SQL = readFileSync(
   join(__dirname, "../../..", "scripts/init-db.sql"),
   "utf8",
 );
 
-export interface TestContext {
-  container: StartedPostgreSqlContainer;
-  dbConnection: DbConnection;
-  app: FastifyInstance;
-}
+let container: StartedPostgreSqlContainer;
+let dbConnection: DbConnection;
+let app: FastifyInstance;
+let adminKey: string;
 
-export async function setupTestApp(): Promise<TestContext> {
-  const container = await new PostgreSqlContainer("postgres:16-alpine")
+beforeAll(async () => {
+  container = await new PostgreSqlContainer("postgres:16-alpine")
     .withDatabase("factory")
     .withUsername("factory")
     .withPassword("test_password")
     .start();
 
   const connectionString = container.getConnectionUri();
-
-  // Apply migrations using a temporary pool (before creating the Drizzle connection)
   const setupPool = new pg.Pool({ connectionString });
 
   const filteredInit = INIT_SQL.split("\n")
@@ -64,16 +57,12 @@ export async function setupTestApp(): Promise<TestContext> {
 
   for (const stmt of MIGRATION_0.split("--> statement-breakpoint")) {
     const trimmed = stmt.trim();
-    if (trimmed) {
-      await setupPool.query(trimmed);
-    }
+    if (trimmed) await setupPool.query(trimmed);
   }
   await setupPool.query(MIGRATION_1);
-  // Migration 0002 has an ALTER TYPE that needs USING clause
   for (const stmt of MIGRATION_2.split("--> statement-breakpoint")) {
     const trimmed = stmt.trim();
     if (!trimmed) continue;
-    // Fix: Postgres can't auto-cast text→integer; add USING clause
     const fixed = trimmed.includes("SET DATA TYPE integer")
       ? trimmed.replace(
           "SET DATA TYPE integer",
@@ -84,30 +73,63 @@ export async function setupTestApp(): Promise<TestContext> {
   }
   await setupPool.end();
 
-  // Create the app's DB connection
-  const dbConnection = createDb(connectionString);
-
-  const app = await createServer({
+  dbConnection = createDb(connectionString);
+  app = await createServer({
     port: 0,
     host: "127.0.0.1",
     logger: false,
     dbConnection,
     webhookSecret: "test-webhook-secret",
+    // No redisUrl — tests SSE without Redis
   });
 
   await app.register(healthRoutes);
-  await app.register(metricsRoutes);
-  await app.register(webhookRoutes);
-  await app.register(apiKeyRoutes);
-  await app.register(taskRoutes);
-  await app.register(setupRoutes);
+  await app.register(eventRoutes);
   await app.ready();
 
-  return { container, dbConnection, app };
-}
+  const result = await apiKeyRepo.createApiKey(
+    dbConnection.db,
+    "test-admin",
+    "admin",
+    "test",
+  );
+  if (result.isOk()) {
+    adminKey = result.value.rawKey;
+  }
+}, 60_000);
 
-export async function teardownTestApp(ctx: TestContext): Promise<void> {
-  await ctx.app.close();
-  await ctx.dbConnection.pool.end();
-  await ctx.container.stop();
-}
+afterAll(async () => {
+  await app.close();
+  await dbConnection.pool.end();
+  await container.stop();
+}, 30_000);
+
+describe("SSE /api/events endpoint", () => {
+  it("rejects requests without token", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/events",
+    });
+    expect(response.statusCode).toBe(401);
+    const body = response.json();
+    expect(body.error.code).toBe("unauthorized");
+  });
+
+  it("rejects requests with invalid token", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/events?token=invalid-key",
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("returns 503 when Redis is not configured", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/events?token=${encodeURIComponent(adminKey)}`,
+    });
+    expect(response.statusCode).toBe(503);
+    const body = response.json();
+    expect(body.error.code).toBe("service_unavailable");
+  });
+});

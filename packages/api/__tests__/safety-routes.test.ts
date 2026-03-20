@@ -90,7 +90,7 @@ beforeAll(async () => {
   dbConnection = createDb(connectionString);
 
   // Create server with Redis URL included
-  app = createServer({
+  app = await createServer({
     port: 0,
     host: "127.0.0.1",
     logger: false,

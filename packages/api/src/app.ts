@@ -1,8 +1,10 @@
 import { createDb } from "@software-factory/db";
 import { seedAdminKey } from "./bootstrap/seed-admin-key.js";
 import { apiKeyRoutes } from "./routes/api-keys.js";
+import { eventRoutes } from "./routes/events.js";
 import { healthRoutes } from "./routes/health.js";
 import { metricsRoutes } from "./routes/metrics.js";
+import { safetyRoutes } from "./routes/safety.js";
 import { setupRoutes } from "./routes/setup.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -19,7 +21,7 @@ export interface AppConfig {
 export async function startApp(config: AppConfig): Promise<void> {
   const dbConnection = createDb(config.databaseUrl);
 
-  const server = createServer({
+  const server = await createServer({
     port: config.port,
     host: config.host,
     logger: config.logger,
@@ -33,7 +35,9 @@ export async function startApp(config: AppConfig): Promise<void> {
   await server.register(webhookRoutes);
   await server.register(apiKeyRoutes);
   await server.register(taskRoutes);
+  await server.register(safetyRoutes);
   await server.register(setupRoutes);
+  await server.register(eventRoutes);
 
   // Seed admin key on first run
   await seedAdminKey(dbConnection.db);

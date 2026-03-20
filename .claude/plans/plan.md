@@ -402,7 +402,13 @@ software-factory/
 > **Goal:** Web dashboard for repo readiness, run inspection, approval, and drift detection.
 > **Human review gate:** Review UX before deployment.
 
-- [ ] **M22: SvelteKit Dashboard** — SSE real-time updates, review inbox, run timeline, evidence viewer, repo readiness screen
+- [x] **M22: SvelteKit Dashboard** — SSE real-time updates, review inbox, run timeline, evidence viewer, repo readiness screen
+  - [x] Step 1 — Register safety routes, add CORS, create SSE /api/events endpoint
+  - [x] Step 2 — Scaffold SvelteKit app in apps/dashboard with Svelte 5, Tailwind CSS v4, adapter-node
+  - [x] Step 3 — API client (fetch-based), SSE client (auto-reconnect), auth store, format/color utils
+  - [x] Step 4 — Layout shell, login page, 5 screens (tasks, task detail, evidence, repos, safety)
+  - [x] Step 5 — 34 tests (31 dashboard + 3 backend SSE endpoint)
+  Commit: "feat: add SvelteKit dashboard — Phase 2 visual control surface"
 
 ---
 

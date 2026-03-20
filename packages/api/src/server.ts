@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import type { DbConnection } from "@software-factory/db";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
@@ -18,7 +19,9 @@ export interface ServerOptions {
   readonly minioEndpoint?: string;
 }
 
-export function createServer(options: ServerOptions): FastifyInstance {
+export async function createServer(
+  options: ServerOptions,
+): Promise<FastifyInstance> {
   const app = Fastify({
     logger: options.logger
       ? {
@@ -31,6 +34,12 @@ export function createServer(options: ServerOptions): FastifyInstance {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(errorHandler);
+
+  // CORS — allow dashboard origin in dev, configurable for production
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
+  });
 
   // Decorate with shared state
   app.decorate("db", options.dbConnection.db);
