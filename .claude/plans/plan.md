@@ -373,8 +373,8 @@ software-factory/
   - [x] Step 4 — Write tests: pr.test.ts (14), check-run.test.ts (22), auto-merge.test.ts (6), review-state-repository.test.ts (6), pr-creation-phase.test.ts (7) → verify: `pnpm test`
   - [x] Step 5 — Final verification: lint, typecheck, full test suite → verify: `pnpm install && pnpm typecheck && pnpm lint && pnpm test`
   Commit: "feat: add PR creation with check runs, auto-merge, and evidence-linked PR body"
-- [ ] **M17: PR Tracking + Feedback Loop** — Webhook-driven PR lifecycle, review feedback → re-implementation cycle, stale review detection
-- [ ] **M18: Merge Readiness + Execution** — Merge queue enqueue, merge execution with SHA safety, post-merge learning phase
+- [x] **M17: PR Tracking + Feedback Loop** — Webhook-driven PR lifecycle, review feedback → re-implementation cycle, stale review detection
+- [x] **M18: Merge Readiness + Execution** — Merge queue enqueue, merge execution with SHA safety, post-merge learning phase
 
 ### Phase 5: Hardening — *"Production-ready safety"*
 

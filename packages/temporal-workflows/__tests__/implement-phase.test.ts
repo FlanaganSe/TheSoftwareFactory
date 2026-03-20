@@ -71,7 +71,7 @@ const baseInput = {
   repoName: "repo",
   branchName: "factory/t1",
   baseSha: "abc123",
-  model: "anthropic/claude-sonnet-4-20250514",
+  model: "openai/gpt-5.4-nano",
   budgetCents: 1000,
   autonomyLevel: "L1" as const,
 };

@@ -181,6 +181,34 @@ describe("task signal endpoints", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  // ── Approve Setup ──
+
+  it("POST /api/tasks/:id/approve-setup without auth → 401", async () => {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${TASK_ID}/approve-setup`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("POST /api/tasks/:id/approve-setup with viewer → 403", async () => {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${TASK_ID}/approve-setup`,
+      headers: { authorization: `Bearer ${viewerKey}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("POST /api/tasks/:id/approve-setup with admin → 503 (no Temporal)", async () => {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${TASK_ID}/approve-setup`,
+      headers: { authorization: `Bearer ${adminKey}` },
+    });
+    expect(res.statusCode).toBe(503);
+  });
+
   // ── Evidence ──
 
   it("GET /api/tasks/:id/evidence for nonexistent task → 404", async () => {

@@ -16,6 +16,7 @@ import {
   createSandboxActivities,
   createSandboxSupervisor,
   createTaskActivities,
+  createValidationActivities,
 } from "@software-factory/temporal-activities";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import Docker from "dockerode";
@@ -50,6 +51,9 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
     socketPath: config.dockerSocketPath ?? "/var/run/docker.sock",
   });
   const sandboxActivities = createSandboxActivities(docker);
+
+  // Validation activities (always registered — core pipeline)
+  const validationActivities = createValidationActivities({ docker, db });
 
   // GitHub activities (requires App credentials)
   const githubActivities = config.githubAppId
@@ -113,7 +117,7 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
         ...createPlanActivities({
           providerConfig: {
             apiKey: config.openRouterApiKey,
-            defaultModel: "anthropic/claude-sonnet-4-20250514",
+            defaultModel: "openai/gpt-5.4-nano",
           },
         }),
       }
@@ -158,6 +162,7 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...auditActivities,
       ...safetyActivities,
       ...sandboxActivities,
+      ...validationActivities,
       ...githubActivities,
       ...indexActivities,
       ...llmActivities,

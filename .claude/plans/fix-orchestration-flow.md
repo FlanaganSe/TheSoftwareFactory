@@ -75,7 +75,7 @@ None. All changes are modifications to existing files following established patt
   - [x] Step 2 — Run `pnpm run lint:fix` to fix indentation after mechanical removal
   - [x] Step 3 — Verify: typecheck clean, 1002 tests pass (8 pre-existing MinIO failures), all 15 E2E tests pass
   Commit: "fix: remove patched() version gates from orchestrator"
-- [ ] **M4: Add clone step + fix repo identity in understand phase** — Call `githubActivities.cloneRepo(repoOwner, repoName, repoPath)` before indexing. Delete `deterministicRepoUUID` from capability-scan.ts. The orchestrator already carries `input.repoId` (now a real DB UUID) — all downstream consumers (pr_creation, pr_tracking, evidence) use `input.repoId`, not `snapshot.repoId`. The `scanRepository` function signature stays unchanged; `fetchRepoMetadata` will use a placeholder for the vestigial field.
+- [x] **M4: Add clone step + fix repo identity in understand phase** — Call `githubActivities.cloneRepo(repoOwner, repoName, repoPath)` before indexing. Delete `deterministicRepoUUID` from capability-scan.ts. The orchestrator already carries `input.repoId` (now a real DB UUID) — all downstream consumers (pr_creation, pr_tracking, evidence) use `input.repoId`, not `snapshot.repoId`. The `scanRepository` function signature stays unchanged; `fetchRepoMetadata` will use a placeholder for the vestigial field.
   - [ ] Step 1 — Add `cloneRepo` call to understand.ts between state transition and scan; use `cloneResult.headSha` for indexing → verify: `pnpm run typecheck`
   - [ ] Step 2 — Delete `deterministicRepoUUID` from capability-scan.ts, replace with `crypto.randomUUID()` → verify: `pnpm run typecheck`
   - [ ] Step 3 — Add `cloneRepo` mock to understand-phase.test.ts → verify: `pnpm run test && pnpm run test:e2e`
@@ -83,7 +83,13 @@ None. All changes are modifications to existing files following established patt
 
 ### Phase C: Wire Missing Components
 
-- [ ] **M5: Register validation activities + add approve-setup route** — Wire `createValidationActivities({docker, db})` in the worker. Add `POST /api/tasks/:id/approve-setup` in the API that sends the `approve_setup` signal.
+- [x] **M5: Register validation activities + add approve-setup route** — Wire `createValidationActivities({docker, db})` in the worker. Add `POST /api/tasks/:id/approve-setup` in the API that sends the `approve_setup` signal. Add L2 auto-approve in setup phase.
+  - [x] Step 1 — Register `createValidationActivities({docker, db})` in worker.ts, spread into activities object
+  - [x] Step 2 — Add `autonomyLevel` to `SetupInput`, pass from orchestrator, add L2 auto-approve logic in setup.ts
+  - [x] Step 3 — Add `POST /api/tasks/:id/approve-setup` route in tasks.ts
+  - [x] Step 4 — Add 3 tests (401, 403, 503) in task-signals.test.ts
+  - [x] Step 5 — Verify: typecheck clean, lint clean, 17/17 signal tests pass, 15/15 E2E pass
+  Commit: "fix: register validation activities and add approve-setup route"
 
 ### Phase D: Tests and Docs
 

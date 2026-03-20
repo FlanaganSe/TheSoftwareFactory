@@ -368,6 +368,46 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // POST /api/tasks/:id/approve-setup
+  app.post(
+    "/api/tasks/:id/approve-setup",
+    { preHandler: [authMiddleware, requireRole("admin", "operator")] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      const temporalClient = getTemporalClient(app, reply);
+      if (!temporalClient) return;
+
+      const body = request.body as
+        | { contract?: Record<string, unknown> }
+        | undefined;
+      const contract = body?.contract ?? {
+        version: "1",
+        image: "node:22-slim",
+        setup: ["npm install || yarn install || pnpm install || true"],
+        maintenance: [],
+        secrets: { setup_only: [], runtime: [], per_tool: [] },
+        health_check: ["node --version"],
+      };
+
+      try {
+        const handle = temporalClient.workflow.getHandle(`task-${id}`);
+        await handle.signal("approve_setup", {
+          contract,
+          actor: request.actor.actorId,
+        });
+        reply.status(200).send({ status: "setup_approved" });
+      } catch (e) {
+        reply.status(500).send({
+          error: {
+            code: "signal_failed",
+            message: `Failed to send approve_setup signal: ${e instanceof Error ? e.message : String(e)}`,
+          },
+        });
+      }
+    },
+  );
+
   // ── Evidence endpoints ──
 
   // GET /api/tasks/:id/evidence

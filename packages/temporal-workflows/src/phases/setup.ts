@@ -44,6 +44,7 @@ export interface SetupInput {
   readonly repoPath: string;
   readonly repoSlug: string;
   readonly trustedContext: TrustedBaseContext;
+  readonly autonomyLevel: "L0" | "L1" | "L2";
 }
 
 export interface SetupResult {
@@ -65,9 +66,8 @@ export async function setupPhase(input: SetupInput): Promise<SetupResult> {
   // Step 2: Load setup contract from TrustedBaseContext
   let setupContract = input.trustedContext.setupContract;
 
-  // Step 3: If no setup contract, generate a suggestion and wait for human approval
+  // Step 3: If no setup contract, generate a suggestion and either auto-approve (L2) or wait for human approval
   if (setupContract === null) {
-    // Generate a basic suggestion
     const suggestedContract: SetupContract = {
       version: "1",
       image: "node:22-slim",
@@ -77,29 +77,37 @@ export async function setupPhase(input: SetupInput): Promise<SetupResult> {
       health_check: ["node --version"],
     };
 
-    // Transition to paused while waiting for human input
-    await taskActivities.transitionTaskState(input.taskId, "paused", "system", {
-      phase: "setup",
-      action: "awaiting_setup_approval",
-      suggestedContract,
-    });
+    if (input.autonomyLevel === "L2") {
+      // L2 (full autonomy): auto-approve the default contract
+      setupContract = suggestedContract;
+    } else {
+      // L0/L1: wait for human approval
+      await taskActivities.transitionTaskState(
+        input.taskId,
+        "paused",
+        "system",
+        {
+          phase: "setup",
+          action: "awaiting_setup_approval",
+          suggestedContract,
+        },
+      );
 
-    // Wait for human approval signal
-    let approvedContract: SetupContract | null = null;
-    setHandler(approveSetupSignal, ({ contract }) => {
-      approvedContract = contract;
-    });
+      let approvedContract: SetupContract | null = null;
+      setHandler(approveSetupSignal, ({ contract }) => {
+        approvedContract = contract;
+      });
 
-    await condition(() => approvedContract !== null);
-    setupContract = approvedContract as unknown as SetupContract;
+      await condition(() => approvedContract !== null);
+      setupContract = approvedContract as unknown as SetupContract;
 
-    // Resume from paused
-    await taskActivities.transitionTaskState(
-      input.taskId,
-      "in_progress",
-      "system",
-      { phase: "setup", action: "setup_approved" },
-    );
+      await taskActivities.transitionTaskState(
+        input.taskId,
+        "in_progress",
+        "system",
+        { phase: "setup", action: "setup_approved" },
+      );
+    }
   }
 
   // Step 4: Provision sandbox

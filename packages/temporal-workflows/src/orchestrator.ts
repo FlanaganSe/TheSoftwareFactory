@@ -391,7 +391,7 @@ export async function taskOrchestrator(
         trustedContext = result.trustedContext;
       }
     } else if (phase === "plan") {
-      const defaultModel = "anthropic/claude-sonnet-4-20250514";
+      const defaultModel = "openai/gpt-5.4-nano";
       const planResult = await executeChild("planPhase", {
         workflowId: childId,
         args: [
@@ -428,12 +428,13 @@ export async function taskOrchestrator(
             repoPath: setupRepoPath,
             repoSlug,
             trustedContext: defaultContext,
+            autonomyLevel: input.autonomyLevel,
           },
         ],
       });
     } else if (phase === "implement") {
       const branchName = `factory/${input.taskId}`;
-      const implModel = "anthropic/claude-sonnet-4-20250514";
+      const implModel = "openai/gpt-5.4-nano";
       const baseSha = trustedContext?.baseSha ?? "HEAD";
 
       const implResult = await executeChild("implementPhase", {
