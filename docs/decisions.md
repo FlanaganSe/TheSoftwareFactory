@@ -43,3 +43,10 @@ Append-only log. Never edit past entries.
 **Context:** When a repo lacks `.factory/setup.yml`, the setup phase generates a default contract (`node:22-slim` + package manager install) and waits for a human `approve_setup` signal. No API route existed to send this signal, so workflows hung indefinitely.
 **Decision:** Auto-approve the default setup contract when `autonomyLevel === "L2"` (full autonomy). Keep the human gate for L0/L1. Add `POST /api/tasks/:id/approve-setup` route for explicit approval.
 **Consequences:** L2 happy path completes without human intervention at the setup phase. L0/L1 users must explicitly approve via API or CLI. The default contract is conservative (no secrets, generic install command).
+
+### ADR-005: All mutable orchestrator state must survive Continue-As-New
+**Date:** 2026-03-20
+**Status:** accepted
+**Context:** The orchestrator accumulates inter-phase state across 11 sequential phases. Temporal's Continue-As-New (CAN) replaces the running execution with a fresh one to bound event history. The original CAN call preserved only 5 of 13 mutable state variables, silently dropping plan text, understand results, PR data, cost tracking, and timing — causing downstream phases to operate on empty data after CAN.
+**Decision:** Every mutable variable in the orchestrator that is read by a later phase must be declared as an optional field on `TaskWorkflowInput`, initialized from `input.*` at startup, and explicitly passed in the `continueAsNew` call. Budget overrides use a separate `costBudgetCentsOverride` field to avoid conflicting with `config.costBudgetCents`.
+**Consequences:** Adding a new inter-phase state variable requires updating three locations (interface, initialization, CAN call). This is an invariant that must be enforced in code review. All types on `TaskWorkflowInput` must be serializable (no classes, functions, or Date objects).
