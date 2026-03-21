@@ -30,8 +30,8 @@ export interface GuardrailConfig {
 }
 
 const DEFAULT_CONFIG: GuardrailConfig = {
-  maxSteps: 10,
-  noProgressThreshold: 5,
+  maxSteps: 20,
+  noProgressThreshold: 10,
   loopOfDoomThreshold: 4,
   wallClockTimeoutMs: 1_800_000,
   budgetCents: 1000,

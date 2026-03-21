@@ -519,6 +519,15 @@ export async function taskOrchestrator(
 
         implementResult = implResult;
         costCents += implResult.agentResult.totalCostCents;
+
+        if (
+          implResult.filesChanged === 0 &&
+          implResult.agentResult.guardrailTripped
+        ) {
+          currentState = "failed";
+          failureReason = `Agent made no changes (guardrail: ${implResult.agentResult.guardrailTripped})`;
+          break;
+        }
       } else if (phase === "validate") {
         const validateContext: TrustedBaseContext = trustedContext ?? {
           baseSha: "HEAD",
