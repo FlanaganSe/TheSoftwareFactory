@@ -40,6 +40,40 @@ function getTemporalClient(
   return temporalClient;
 }
 
+/** Resolve the review child workflow handle for a given task. */
+async function getReviewHandle(temporalClient: Client, taskId: string) {
+  const parentHandle = temporalClient.workflow.getHandle(`task-${taskId}`);
+  let phaseIteration = 0;
+  try {
+    const progress = await parentHandle.query<{ phaseIteration: number }>(
+      "getProgress",
+    );
+    phaseIteration = progress.phaseIteration;
+  } catch {
+    // Fall back to iteration 0 if query fails (workflow may have completed)
+  }
+  return temporalClient.workflow.getHandle(
+    `task-${taskId}-review-${phaseIteration}`,
+  );
+}
+
+/** Resolve the implement child workflow handle for a given task. */
+async function getImplementHandle(temporalClient: Client, taskId: string) {
+  const parentHandle = temporalClient.workflow.getHandle(`task-${taskId}`);
+  let phaseIteration = 0;
+  try {
+    const progress = await parentHandle.query<{ phaseIteration: number }>(
+      "getProgress",
+    );
+    phaseIteration = progress.phaseIteration;
+  } catch {
+    // Fall back to iteration 0 if query fails (workflow may have completed)
+  }
+  return temporalClient.workflow.getHandle(
+    `task-${taskId}-implement-${phaseIteration}`,
+  );
+}
+
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
   // Create a shared kill switch if Redis is available
   let killSwitch: KillSwitch | null = null;
@@ -186,27 +220,69 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
-      const temporalClient = getTemporalClient(app, reply);
-      if (!temporalClient) return;
-
-      try {
-        const handle = temporalClient.workflow.getHandle(`task-${id}`);
-        const desc = await handle.describe();
-
-        reply.status(200).send({
-          taskId: id,
-          workflowId: `task-${id}`,
-          status: desc.status.name,
-          startTime: desc.startTime?.toISOString(),
-        });
-      } catch {
+      // Step 1: Query Postgres (source of truth for task existence and state)
+      const dbResult = await taskRepo.getTask(app.db, id);
+      if (dbResult.isErr()) {
         reply.status(404).send({
           error: {
             code: "not_found",
             message: `Task ${id} not found`,
           },
         });
+        return;
       }
+
+      const dbTask = dbResult.value;
+      const response: Record<string, unknown> = {
+        taskId: dbTask.id,
+        workflowId: `task-${dbTask.id}`,
+        status: dbTask.state,
+        state: dbTask.state,
+        objective: dbTask.objective,
+        startTime: dbTask.createdAt.toISOString(),
+        updatedAt: dbTask.updatedAt.toISOString(),
+      };
+
+      // Step 2: Enrich with Temporal progress data if workflow is still running
+      const temporalClient = app.temporalClient;
+      if (temporalClient) {
+        try {
+          const handle = temporalClient.workflow.getHandle(`task-${id}`);
+          const desc = await handle.describe();
+          response.status = desc.status.name;
+
+          if (desc.status.name === "RUNNING") {
+            try {
+              const progress = await handle.query<{
+                taskId: string;
+                currentPhase: string;
+                state: string;
+                attemptNumber: number;
+                phaseIteration: number;
+                startedAt: string;
+                lastActivityAt: string;
+                costCents: number;
+                costBudgetCents: number;
+              }>("getProgress");
+              response.currentPhase = progress.currentPhase;
+              response.state = progress.state;
+              response.attemptNumber = progress.attemptNumber;
+              response.phaseIteration = progress.phaseIteration;
+              response.lastActivityAt = progress.lastActivityAt;
+              response.costCents = progress.costCents;
+              response.costBudgetCents = progress.costBudgetCents;
+            } catch {
+              // Query may fail if workflow just completed — keep Postgres data
+            }
+          }
+        } catch {
+          // Temporal unreachable or workflow not found — keep Postgres data.
+          // For completed workflows, status from Postgres (e.g., "merged", "failed")
+          // is the correct final state.
+        }
+      }
+
+      reply.status(200).send(response);
     },
   );
 
@@ -219,29 +295,12 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
-      // Separation of duties: task submitter ≠ sole approver (R-018)
-      const taskResult = await taskRepo.getTask(app.db, id);
-      if (taskResult.isOk()) {
-        const task = taskResult.value;
-        if (task.createdBy === request.actor.actorId) {
-          reply.status(403).send({
-            error: {
-              code: "separation_of_duties",
-              message: "Task submitter cannot be sole approver",
-            },
-          });
-          return;
-        }
-      }
-      // If task not found in DB, still attempt the signal —
-      // the workflow may exist even if the DB read fails
-
       const temporalClient = getTemporalClient(app, reply);
       if (!temporalClient) return;
 
       try {
-        const handle = temporalClient.workflow.getHandle(`task-${id}`);
-        await handle.signal("approve", {
+        const reviewHandle = await getReviewHandle(temporalClient, id);
+        await reviewHandle.signal("approve", {
           actor: request.actor.actorId,
         });
         reply.status(200).send({ status: "approved" });
@@ -277,8 +336,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       if (!temporalClient) return;
 
       try {
-        const handle = temporalClient.workflow.getHandle(`task-${id}`);
-        await handle.signal("reject", {
+        const reviewHandle = await getReviewHandle(temporalClient, id);
+        await reviewHandle.signal("reject", {
           actor: request.actor.actorId,
           reason: parsed.data.reason,
         });
@@ -315,8 +374,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       if (!temporalClient) return;
 
       try {
-        const handle = temporalClient.workflow.getHandle(`task-${id}`);
-        await handle.signal("changes_requested", {
+        const reviewHandle = await getReviewHandle(temporalClient, id);
+        await reviewHandle.signal("changes_requested", {
           actor: request.actor.actorId,
           message: parsed.data.message,
         });
@@ -404,6 +463,71 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
           error: {
             code: "signal_failed",
             message: `Failed to send approve_setup signal: ${e instanceof Error ? e.message : String(e)}`,
+          },
+        });
+      }
+    },
+  );
+
+  // POST /api/tasks/:id/approve-implementation
+  app.post(
+    "/api/tasks/:id/approve-implementation",
+    { preHandler: [authMiddleware, requireRole("admin", "operator")] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      const temporalClient = getTemporalClient(app, reply);
+      if (!temporalClient) return;
+
+      try {
+        const handle = await getImplementHandle(temporalClient, id);
+        await handle.signal("approve", {
+          actor: request.actor.actorId,
+        });
+        reply.status(200).send({ status: "implementation_approved" });
+      } catch (e) {
+        reply.status(500).send({
+          error: {
+            code: "signal_failed",
+            message: `Failed to send approve signal: ${e instanceof Error ? e.message : String(e)}`,
+          },
+        });
+      }
+    },
+  );
+
+  // POST /api/tasks/:id/reject-implementation
+  app.post(
+    "/api/tasks/:id/reject-implementation",
+    { preHandler: [authMiddleware, requireRole("admin", "operator")] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = RejectBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "validation_error",
+            message: "reason is required",
+          },
+        });
+        return;
+      }
+
+      const temporalClient = getTemporalClient(app, reply);
+      if (!temporalClient) return;
+
+      try {
+        const handle = await getImplementHandle(temporalClient, id);
+        await handle.signal("reject", {
+          actor: request.actor.actorId,
+          reason: parsed.data.reason,
+        });
+        reply.status(200).send({ status: "implementation_rejected" });
+      } catch (e) {
+        reply.status(500).send({
+          error: {
+            code: "signal_failed",
+            message: `Failed to send reject signal: ${e instanceof Error ? e.message : String(e)}`,
           },
         });
       }

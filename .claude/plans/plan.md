@@ -66,11 +66,10 @@ The core pipeline fixes — ensures the agent loop terminates productively, guar
 
 Ensures L0/L1 approval signals reach the correct workflow and the dashboard shows the right UI for paused states.
 
-- [ ] M2.1: Add `POST /api/tasks/:id/approve-implementation` and `POST /api/tasks/:id/reject-implementation` endpoints in `tasks.ts`
-- [ ] M2.2: Fix dashboard `canApprove` to include "paused" state and route to correct endpoint
-- [ ] M2.3: Fix `GET /api/tasks/:id` to query Postgres first, enrich with Temporal data
-
-**Verify**: Run typecheck. Confirm the new endpoints return proper responses. Manual: submit an L1 task, confirm the dashboard shows an approve button when paused at implement, confirm the approve signal reaches the implement child workflow.
+- [x] M2.1: Add `getImplementHandle` helper + `POST /approve-implementation` + `POST /reject-implementation` in `tasks.ts` → verify: `grep -c 'approve-implementation' packages/api/src/routes/tasks.ts`
+- [x] M2.2: Add `approveImplementation`, `rejectImplementation`, `approveSetup` client methods; add `isPausedAtImplement`/`isPausedAtSetup` derived state; update `handleApprove`/`handleReject` routing; add paused-state banner; hide "Request Changes" for paused states → verify: `pnpm run typecheck`
+- [x] M2.3: Rewrite `GET /api/tasks/:id` to Postgres-first with Temporal enrichment; add `objective`/`updatedAt` to `TaskDetailResponse` → verify: `pnpm run typecheck`
+  Commit: "fix: signal routing, dashboard paused state, and task detail Postgres fallback"
 
 ### M3: Fix Orchestrator Robustness
 

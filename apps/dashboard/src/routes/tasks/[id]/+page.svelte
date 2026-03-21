@@ -1,15 +1,19 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { page } from "$app/state";
   import { createApiClient } from "$lib/api/client";
   import type { TaskDetailResponse, EvidenceResponse } from "$lib/api/client";
-  import type { TaskState } from "@software-factory/core";
+  import type { TaskState, WorkflowPhase } from "@software-factory/core";
+  import { WORKFLOW_PHASES } from "@software-factory/core";
   import { getApiKey, getApiUrl } from "$lib/stores/auth";
   import TaskBadge from "$lib/components/tasks/TaskBadge.svelte";
   import TaskTimeline from "$lib/components/tasks/TaskTimeline.svelte";
+  import ActivityFeed from "$lib/components/tasks/ActivityFeed.svelte";
+  import CostProgress from "$lib/components/tasks/CostProgress.svelte";
   import RiskSummary from "$lib/components/evidence/RiskSummary.svelte";
   import BlastRadius from "$lib/components/evidence/BlastRadius.svelte";
   import { formatDateTime, formatCost } from "$lib/utils/format";
+  import { getTaskProgress } from "$lib/stores/task-events.svelte";
 
   let task: TaskDetailResponse | null = $state(null);
   let evidence: EvidenceResponse | null = $state(null);
@@ -20,8 +24,41 @@
   let showChangesInput = $state(false);
   let changesMessage = $state("");
   let rejectConfirmed = $state(false);
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
 
   const taskId = $derived(page.params.id ?? "");
+
+  function deriveCompletedPhases(currentPhase?: string): WorkflowPhase[] {
+    if (!currentPhase) return [];
+    const idx = WORKFLOW_PHASES.indexOf(currentPhase as WorkflowPhase);
+    if (idx <= 0) return [];
+    return WORKFLOW_PHASES.slice(0, idx) as unknown as WorkflowPhase[];
+  }
+
+  // Prefer live SSE data over polling data
+  // Note: (task as TaskDetailResponse | null) cast is required because svelte-check
+  // cannot properly infer $state types inside $derived blocks
+  const liveProgress = $derived(getTaskProgress(taskId));
+  const taskRef = $derived(task as TaskDetailResponse | null);
+  const effectivePhase = $derived(
+    (liveProgress?.currentPhase ?? taskRef?.currentPhase) as WorkflowPhase | undefined
+  );
+  const completedPhases = $derived(
+    liveProgress?.completedPhases?.length
+      ? (liveProgress.completedPhases as WorkflowPhase[])
+      : deriveCompletedPhases(taskRef?.currentPhase)
+  );
+  const effectiveCost = $derived(liveProgress?.costCents ?? taskRef?.costCents);
+  const isRunning = $derived(taskRef?.status === "RUNNING");
+
+  async function fetchTask(): Promise<void> {
+    try {
+      const client = createApiClient(getApiUrl(), getApiKey());
+      task = await client.getTask(taskId);
+    } catch {
+      // Polling failure is non-fatal — keep showing last known state
+    }
+  }
 
   onMount(async () => {
     if (!taskId) return;
@@ -33,6 +70,24 @@
       } catch {
         // Evidence may not exist yet
       }
+
+      // Poll while workflow is running
+      if (task?.status === "RUNNING") {
+        pollTimer = setInterval(async () => {
+          await fetchTask();
+          // Stop polling once no longer running
+          if (task && task.status !== "RUNNING" && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = undefined;
+            // Try fetching evidence now that workflow may have produced it
+            try {
+              evidence = await createApiClient(getApiUrl(), getApiKey()).getEvidence(taskId);
+            } catch {
+              // Still no evidence
+            }
+          }
+        }, 5_000);
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load task";
     } finally {
@@ -40,13 +95,31 @@
     }
   });
 
+  onDestroy(() => {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = undefined;
+    }
+  });
+
   async function handleApprove() {
-    if (!confirm("Approve this task? This will proceed to PR creation.")) return;
+    const confirmMsg = isPausedAtSetup
+      ? "Approve the setup contract? This will provision the sandbox."
+      : isPausedAtImplement
+        ? "Approve implementation? The agent will begin coding."
+        : "Approve this task? This will proceed to PR creation.";
+    if (!confirm(confirmMsg)) return;
     actionLoading = true;
     try {
       const client = createApiClient(getApiUrl(), getApiKey());
-      await client.approveTask(taskId);
-      if (task) task = { ...task, status: "approved" };
+      if (isPausedAtSetup) {
+        await client.approveSetup(taskId);
+      } else if (isPausedAtImplement) {
+        await client.approveImplementation(taskId);
+      } else {
+        await client.approveTask(taskId);
+      }
+      if (task) task = { ...task, status: "in_progress" };
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to approve");
     } finally {
@@ -62,7 +135,11 @@
     actionLoading = true;
     try {
       const client = createApiClient(getApiUrl(), getApiKey());
-      await client.rejectTask(taskId, "Rejected by operator");
+      if (isPausedAtImplement) {
+        await client.rejectImplementation(taskId, "Rejected by operator");
+      } else {
+        await client.rejectTask(taskId, "Rejected by operator");
+      }
       if (task) task = { ...task, status: "failed" };
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to reject");
@@ -104,11 +181,23 @@
   }
 
   const taskStatus = $derived((task as TaskDetailResponse | null)?.status ?? "");
+  const effectiveState = $derived(liveProgress?.state ?? taskRef?.state ?? taskStatus);
+  const isPausedAtImplement = $derived(
+    effectiveState === "paused" && effectivePhase === "implement",
+  );
+  const isPausedAtSetup = $derived(
+    effectiveState === "paused" && effectivePhase === "setup",
+  );
   const canApprove = $derived(
-    taskStatus === "evidence_ready" || taskStatus === "changes_requested",
+    taskStatus === "evidence_ready" ||
+    taskStatus === "changes_requested" ||
+    isPausedAtImplement ||
+    isPausedAtSetup,
   );
   const canReject = $derived(
-    taskStatus === "evidence_ready" || taskStatus === "changes_requested",
+    taskStatus === "evidence_ready" ||
+    taskStatus === "changes_requested" ||
+    isPausedAtImplement,
   );
   const canKill = $derived(
     !!task && !["merged", "failed", "cancelled"].includes(taskStatus),
@@ -143,8 +232,29 @@
 
     <!-- Phase Timeline -->
     <div class="mb-6 p-4 bg-surface-1 border border-border rounded-lg">
-      <TaskTimeline />
+      <TaskTimeline
+        currentPhase={effectivePhase}
+        {completedPhases}
+      />
+      {#if effectiveCost != null && task?.costBudgetCents}
+        <div class="mt-3">
+          <CostProgress costCents={effectiveCost} budgetCents={task.costBudgetCents} />
+        </div>
+      {/if}
     </div>
+
+    <!-- Paused state context -->
+    {#if isPausedAtSetup}
+      <div class="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+        <p class="text-sm text-yellow-300 font-medium">Awaiting Setup Approval</p>
+        <p class="text-xs text-text-muted mt-1">The sandbox environment needs approval before provisioning. Review and approve to continue.</p>
+      </div>
+    {:else if isPausedAtImplement}
+      <div class="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+        <p class="text-sm text-yellow-300 font-medium">Awaiting Implementation Approval</p>
+        <p class="text-xs text-text-muted mt-1">The agent is ready to begin coding. Review the plan and approve to start implementation.</p>
+      </div>
+    {/if}
 
     <!-- Quick Actions -->
     <div class="mb-6 flex flex-wrap gap-2">
@@ -158,13 +268,16 @@
         </button>
       {/if}
 
-      {#if canReject}
+      {#if canReject && !isPausedAtImplement && !isPausedAtSetup}
         <button
           onclick={() => { showChangesInput = !showChangesInput; }}
           class="px-4 py-2 bg-orange-600/20 text-orange-400 hover:bg-orange-600/30 text-sm rounded-md font-medium transition-colors"
         >
           Request Changes
         </button>
+      {/if}
+
+      {#if canReject}
         <button
           onclick={() => { showRejectConfirm = true; }}
           class="px-4 py-2 bg-red-600/20 text-red-400 hover:bg-red-600/30 text-sm rounded-md font-medium transition-colors"
@@ -229,6 +342,22 @@
             Cancel
           </button>
         </div>
+      </div>
+    {/if}
+
+    <!-- Agent Activity (live during implement phase) -->
+    {#if liveProgress?.agentSteps?.length}
+      <div class="mb-6 p-4 bg-surface-1 border border-border rounded-lg">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-medium text-text-primary">Agent Activity</h3>
+          <span class="text-xs text-text-muted">{liveProgress.agentSteps.length} steps</span>
+        </div>
+        {#if effectiveCost != null && task?.costBudgetCents}
+          <div class="mb-3">
+            <CostProgress costCents={effectiveCost} budgetCents={task.costBudgetCents} />
+          </div>
+        {/if}
+        <ActivityFeed steps={liveProgress.agentSteps} />
       </div>
     {/if}
 

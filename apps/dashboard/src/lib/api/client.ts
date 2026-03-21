@@ -10,13 +10,16 @@ export class DashboardApiError extends Error {
 
 export function createApiClient(apiUrl: string, token: string) {
   async function request<T>(path: string, options?: RequestInit): Promise<T> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      ...options?.headers as Record<string, string>,
+    };
+    if (options?.body) {
+      headers["Content-Type"] = "application/json";
+    }
     const response = await fetch(`${apiUrl}${path}`, {
       ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -36,6 +39,15 @@ export function createApiClient(apiUrl: string, token: string) {
     getEvidence: (id: string) => request<EvidenceResponse>(`/api/tasks/${id}/evidence`),
     getFreshness: (id: string) => request<FreshnessResponse>(`/api/tasks/${id}/freshness`),
     approveTask: (id: string) => request<SignalResponse>(`/api/tasks/${id}/approve`, { method: "POST" }),
+    approveImplementation: (id: string) =>
+      request<SignalResponse>(`/api/tasks/${id}/approve-implementation`, { method: "POST" }),
+    rejectImplementation: (id: string, reason: string) =>
+      request<SignalResponse>(`/api/tasks/${id}/reject-implementation`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    approveSetup: (id: string) =>
+      request<SignalResponse>(`/api/tasks/${id}/approve-setup`, { method: "POST" }),
     rejectTask: (id: string, reason: string) =>
       request<SignalResponse>(`/api/tasks/${id}/reject`, {
         method: "POST",
@@ -98,6 +110,15 @@ export interface TaskDetailResponse {
   workflowId: string;
   status: string;
   startTime?: string;
+  currentPhase?: string;
+  state?: string;
+  attemptNumber?: number;
+  phaseIteration?: number;
+  lastActivityAt?: string;
+  costCents?: number;
+  costBudgetCents?: number;
+  objective?: string;
+  updatedAt?: string;
 }
 
 export interface EvidenceResponse {
