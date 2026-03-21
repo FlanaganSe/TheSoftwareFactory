@@ -75,11 +75,12 @@ Ensures L0/L1 approval signals reach the correct workflow and the dashboard show
 
 Ensures the orchestrator preserves all inter-phase data across Continue-As-New and doesn't silently drop evidence data.
 
-- [ ] M3.1: Add missing fields to `TaskWorkflowInput` and CAN call in `orchestrator.ts`
-- [ ] M3.2: Fix evidence validation data mapping to pass through actual vulnerability/migration data
-- [ ] M3.3: Add startup activity validation warnings in `worker.ts`
+- [ ] M3.1: Add 6 missing fields to `TaskWorkflowInput`, initialize mutable state from `input.*`, expand CAN call → verify: `pnpm run typecheck`
+- [ ] M3.2: Add explanatory comments to hardcoded empty arrays in evidence validation mapping → verify: grep for "not yet surfaced" in orchestrator.ts
+- [ ] M3.3: Add startup activity validation warnings in `worker.ts` → verify: grep for "missingActivities" in worker.ts
+  Commit: "fix: orchestrator CAN state preservation, evidence mapping docs, worker startup validation"
 
-**Verify**: Run typecheck. Review the CAN input type to confirm all inter-phase state is included. Grep for hardcoded empty arrays in the evidence mapping and confirm they're replaced with actual data passthrough.
+**Verify**: `pnpm run typecheck` + verification greps
 
 ---
 

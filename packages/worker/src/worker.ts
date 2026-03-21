@@ -6,6 +6,8 @@ import {
   createAuditActivities,
   createBranchLeaseActivity,
   createCostCheckActivity,
+  createEventActivities,
+  createEventPublisher,
   createEvidenceActivities,
   createGitHubActivities,
   createIndexActivities,
@@ -38,6 +40,18 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
   const { db } = createDb(config.databaseUrl);
   const redis = createRedisClient(config.redisUrl);
   await redis.connect();
+
+  // Event publisher for SSE push — verify on startup
+  const eventPublisher = createEventPublisher(redis, logger);
+  const eventActivities = createEventActivities({ publisher: eventPublisher });
+  const subscriberCount = await redis.publish(
+    "factory:tasks",
+    JSON.stringify({
+      type: "system_startup",
+      timestamp: new Date().toISOString(),
+    }),
+  );
+  logger.info({ subscriberCount }, "Event publisher verified");
 
   // Create activity implementations with injected dependencies
   const taskActivities = createTaskActivities(db);
@@ -74,9 +88,12 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
   const indexActivities = createIndexActivities({ db });
 
   // LLM activities
+  const agentLogger = logger.child({ component: "agent" });
+
   const llmActivities = config.openRouterApiKey
     ? {
         ...createLLMActivities({
+          logger: agentLogger,
           createAgentConfig: async (stepConfig) => {
             const providerConfig = {
               apiKey: config.openRouterApiKey ?? "",
@@ -107,6 +124,15 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
                 openRouterApiKey: config.openRouterApiKey,
               },
               checkKillSwitch: safetyActivities.checkKillSwitch,
+              logger: agentLogger,
+              onStepPublish: (stepEvent) => {
+                eventPublisher.publishTaskEvent({
+                  type: "agent_step",
+                  taskId: stepConfig.taskId,
+                  ...stepEvent,
+                  timestamp: new Date().toISOString(),
+                });
+              },
             };
           },
         }),
@@ -136,6 +162,24 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       })
     : {};
 
+  // ── Startup validation: warn about conditionally disabled activity groups ──
+  const missingActivities: string[] = [];
+  if (!config.githubAppId) {
+    missingActivities.push("GitHub (GITHUB_APP_ID)");
+  }
+  if (!config.openRouterApiKey) {
+    missingActivities.push("LLM/Plan (OPENROUTER_API_KEY)");
+  }
+  if (!config.minioSecretKey) {
+    missingActivities.push("Evidence (MINIO_ROOT_PASSWORD)");
+  }
+  if (missingActivities.length > 0) {
+    logger.warn(
+      { disabled: missingActivities },
+      `Activity groups disabled due to missing config: ${missingActivities.join(", ")}. Workflows requiring these activities will fail at runtime.`,
+    );
+  }
+
   // Build OTel workflow exporter sink for V8 sandbox trace bridging.
   // The Temporal interceptors package pins @opentelemetry/sdk-trace-base@1.x
   // while our SDK uses 2.x — runtime compatible but types diverge.
@@ -157,6 +201,7 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
       ...taskActivities,
       ...auditActivities,
       ...safetyActivities,
+      ...eventActivities,
       ...sandboxActivities,
       ...validationActivities,
       ...githubActivities,

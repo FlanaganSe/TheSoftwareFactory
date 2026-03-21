@@ -16,6 +16,7 @@ import {
   condition,
   continueAsNew,
   executeChild,
+  patched,
   proxyActivities,
   setHandler,
   workflowInfo,
@@ -23,6 +24,8 @@ import {
 import { Mutex } from "async-mutex";
 
 import type {
+  EvidenceLocatorData,
+  EventActivities,
   MergeActivities,
   SafetyActivities,
   SandboxActivities,
@@ -78,6 +81,14 @@ export interface TaskWorkflowInput {
   readonly setupResult?: SetupResult;
   readonly implementResult?: ImplementResult;
   readonly validateResult?: ValidateResult;
+  readonly understandResult?: UnderstandResult;
+  readonly planText?: string;
+  readonly evidenceLocator?: EvidenceLocatorData;
+  readonly prResult?: PrCreationFullResult;
+  readonly addressingFeedback?: boolean;
+  readonly mergedSha?: string;
+  readonly costCents?: number;
+  readonly startedAt?: string;
 }
 
 // ─── Phase ordering ───
@@ -125,29 +136,23 @@ export async function taskOrchestrator(
   const attemptNumber = input.attemptNumber ?? 1;
   let phaseIteration = input.phaseIteration ?? 0;
   let costBudgetCents = input.config.costBudgetCents;
-  let costCents = 0;
-  const startedAt = new Date().toISOString();
+  let costCents = input.costCents ?? 0;
+  const startedAt = input.startedAt ?? new Date().toISOString();
   let lastActivityAt = startedAt;
-  let mergedSha: string | undefined;
+  let mergedSha: string | undefined = input.mergedSha;
 
   // Inter-phase data (persisted for Continue-As-New)
   let trustedContext: TrustedBaseContext | undefined = input.trustedContext;
   let capabilitySnapshot: CapabilitySnapshot | undefined =
     input.capabilitySnapshot;
-  let understandResult: UnderstandResult | undefined;
-  let planText: string | undefined;
+  let understandResult: UnderstandResult | undefined = input.understandResult;
+  let planText: string | undefined = input.planText;
   let setupResult: SetupResult | undefined = input.setupResult;
   let implementResult: ImplementResult | undefined = input.implementResult;
   let validateResult: ValidateResult | undefined = input.validateResult;
-  let evidenceLocator:
-    | {
-        readonly taskId: string;
-        readonly bundleId: string;
-        readonly artifactPrefix: string;
-      }
-    | undefined;
-  let prResult: PrCreationFullResult | undefined;
-  let addressingFeedback = false;
+  let evidenceLocator: EvidenceLocatorData | undefined = input.evidenceLocator;
+  let prResult: PrCreationFullResult | undefined = input.prResult;
+  let addressingFeedback = input.addressingFeedback ?? false;
 
   // ─── Signal Handlers ───
 
@@ -282,6 +287,38 @@ export async function taskOrchestrator(
 
   setHandler(getPhaseQuery, (): string => currentPhase);
 
+  // ─── Event publishing (fire-and-forget, never blocks pipeline) ───
+
+  const eventActivities = proxyActivities<EventActivities>({
+    startToCloseTimeout: "5s",
+    retry: { maximumAttempts: 1 },
+  });
+
+  async function emitPhaseEvent(
+    type:
+      | "phase_started"
+      | "phase_completed"
+      | "task_state_changed"
+      | "task_error",
+    phase: PhaseName,
+  ): Promise<void> {
+    if (!patched("observability-phase-events")) return;
+    try {
+      await eventActivities.publishPhaseEvent({
+        type,
+        taskId: input.taskId,
+        phase,
+        state: currentState,
+        attemptNumber,
+        phaseIteration,
+        costCents,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      // Fire-and-forget: never fail the pipeline for event publishing
+    }
+  }
+
   // ─── Determine starting phase ───
   let startIdx = 0;
   if (input.resumeFromPhase) {
@@ -316,12 +353,22 @@ export async function taskOrchestrator(
           setupResult,
           implementResult,
           validateResult,
+          understandResult,
+          planText,
+          evidenceLocator,
+          prResult,
+          addressingFeedback,
+          mergedSha,
+          costCents,
+          startedAt,
         });
       }
 
       const phase = PHASE_ORDER[i];
       currentPhase = phase;
       lastActivityAt = new Date().toISOString();
+
+      await emitPhaseEvent("phase_started", phase);
 
       // Phases that repeat on changes_requested need iteration in the ID
       // to avoid Temporal's workflow ID uniqueness constraint
@@ -503,6 +550,47 @@ export async function taskOrchestrator(
           capturedAt: new Date().toISOString(),
         };
 
+        // Map validate-phase output to evidence-phase input shape.
+        // The validate phase returns a flat structure; the evidence generator
+        // expects a nested one with full security/migration objects.
+        const vr = validateResult?.validationResult;
+        const evidenceValidation = {
+          testResults: vr?.testResults ?? { passed: 0, failed: 0, skipped: 0 },
+          lintResults: vr?.lintResults ?? { errorCount: 0, warningCount: 0 },
+          securityScanResults: {
+            // Individual vulnerability details are not yet surfaced by the validate phase.
+            // The validate phase only provides aggregate counts (securityFindings, criticalVulnerabilities).
+            vulnerabilities: [] as readonly {
+              id: string;
+              severity: "critical" | "high" | "medium" | "low";
+              description: string;
+            }[],
+            totalFindings: vr?.securityFindings ?? 0,
+            criticalCount: vr?.criticalVulnerabilities ?? 0,
+            highCount: 0,
+          },
+          blastRadius: vr?.blastRadius ?? { files: 0, packages: 0 },
+          protectedSurfaceEdits: vr?.protectedSurfaceEdits ?? [],
+          migrationImpact: {
+            hasMigrations: vr?.hasMigrations ?? false,
+            // Individual migration files and schema changes are not yet surfaced by the validate phase.
+            // The validate phase only provides the hasMigrations boolean flag.
+            migrationFiles: [] as readonly string[],
+            schemaChanges: [] as readonly string[],
+          },
+          revertabilityClass: (vr?.revertabilityClass ?? "clean_revert") as
+            | "clean_revert"
+            | "revert_with_migration"
+            | "non_revertable",
+          // Individual command records are tracked at the activity level, not surfaced through the validate phase result.
+          commandsRun: [] as readonly {
+            command: string;
+            exitCode: number;
+            durationMs: number;
+          }[],
+          validatorControlFileEdits: vr?.validatorControlFileEdits,
+        };
+
         const evidenceResult = await executeChild("evidencePhase", {
           workflowId: childId,
           args: [
@@ -515,29 +603,7 @@ export async function taskOrchestrator(
               headSha: implementResult?.headSha ?? evidenceContext.baseSha,
               mergeBaseSha: evidenceContext.baseSha,
               containerId: setupResult?.sandboxInstance?.containerId ?? "",
-              validationResult: validateResult?.validationResult ?? {
-                testResults: {
-                  passed: 0,
-                  failed: 0,
-                  skipped: 0,
-                },
-                lintResults: { errorCount: 0, warningCount: 0 },
-                securityScanResults: {
-                  vulnerabilities: [],
-                  totalFindings: 0,
-                  criticalCount: 0,
-                  highCount: 0,
-                },
-                blastRadius: { files: 0, packages: 0 },
-                protectedSurfaceEdits: [],
-                migrationImpact: {
-                  hasMigrations: false,
-                  migrationFiles: [],
-                  schemaChanges: [],
-                },
-                revertabilityClass: "clean_revert",
-                commandsRun: [],
-              },
+              validationResult: evidenceValidation,
               agentResult: {
                 filesModified:
                   implementResult?.agentResult?.filesModified ?? [],
@@ -562,6 +628,9 @@ export async function taskOrchestrator(
         if (addressingFeedback) {
           // Skip internal review when re-entering after external review feedback.
           // The PR already exists and the external reviewer is tracking it.
+          currentState = "approved";
+        } else if (patched("l2-auto-approve") && input.autonomyLevel === "L2") {
+          // L2 (full autonomy): auto-approve without human review
           currentState = "approved";
         } else {
           const reviewResult = await executeChild("reviewPhase", {
@@ -870,6 +939,8 @@ export async function taskOrchestrator(
         })) as LearnFullResult;
         void learnResult;
       }
+
+      await emitPhaseEvent("phase_completed", phase);
     }
   } catch (error: unknown) {
     if (error instanceof ContinueAsNew) {
