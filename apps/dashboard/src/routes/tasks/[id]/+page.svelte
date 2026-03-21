@@ -49,7 +49,7 @@
       : deriveCompletedPhases(taskRef?.currentPhase)
   );
   const effectiveCost = $derived(liveProgress?.costCents ?? taskRef?.costCents);
-  const isRunning = $derived(taskRef?.status === "RUNNING");
+  const isRunning = $derived(taskRef?.workflowStatus === "RUNNING");
 
   async function fetchTask(): Promise<void> {
     try {
@@ -72,11 +72,11 @@
       }
 
       // Poll while workflow is running
-      if (task?.status === "RUNNING") {
+      if (task?.workflowStatus === "RUNNING") {
         pollTimer = setInterval(async () => {
           await fetchTask();
           // Stop polling once no longer running
-          if (task && task.status !== "RUNNING" && pollTimer) {
+          if (task && task.workflowStatus !== "RUNNING" && pollTimer) {
             clearInterval(pollTimer);
             pollTimer = undefined;
             // Try fetching evidence now that workflow may have produced it
@@ -215,7 +215,7 @@
       <div>
         <div class="flex items-center gap-3">
           <h2 class="text-lg font-semibold text-text-primary">Task {taskId.slice(0, 8)}</h2>
-          <TaskBadge state={(task.status as TaskState) ?? "created"} />
+          <TaskBadge state={((task.state ?? task.status) as TaskState) ?? "created"} />
         </div>
         {#if task.startTime}
           <p class="text-xs text-text-muted mt-1">Started {formatDateTime(task.startTime)}</p>

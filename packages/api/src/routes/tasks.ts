@@ -249,7 +249,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         try {
           const handle = temporalClient.workflow.getHandle(`task-${id}`);
           const desc = await handle.describe();
-          response.status = desc.status.name;
+          response.workflowStatus = desc.status.name;
 
           if (desc.status.name === "RUNNING") {
             try {

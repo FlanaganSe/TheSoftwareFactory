@@ -119,6 +119,7 @@ export interface TaskDetailResponse {
   costBudgetCents?: number;
   objective?: string;
   updatedAt?: string;
+  workflowStatus?: string;
 }
 
 export interface EvidenceResponse {

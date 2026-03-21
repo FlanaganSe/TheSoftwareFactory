@@ -3,13 +3,20 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { createApiClient } from "$lib/api/client";
-  import type { EvidenceResponse } from "$lib/api/client";
+  import type { EvidenceResponse, TaskDetailResponse } from "$lib/api/client";
   import { getApiKey, getApiUrl } from "$lib/stores/auth";
   import EvidenceViewer from "$lib/components/evidence/EvidenceViewer.svelte";
 
   let evidence: EvidenceResponse | null = $state(null);
+  let taskDetail: TaskDetailResponse | null = $state(null);
   let loading = $state(true);
   let error = $state("");
+
+  const REVIEWABLE_STATES = ["evidence_ready", "changes_requested"];
+  const canAct = $derived(
+    taskDetail != null &&
+    REVIEWABLE_STATES.includes(taskDetail.state ?? taskDetail.status)
+  );
 
   const taskId = $derived(page.params.id ?? "");
 
@@ -17,7 +24,10 @@
     if (!taskId) return;
     try {
       const client = createApiClient(getApiUrl(), getApiKey());
-      evidence = await client.getEvidence(taskId);
+      [evidence, taskDetail] = await Promise.all([
+        client.getEvidence(taskId),
+        client.getTask(taskId),
+      ]);
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load evidence";
     } finally {
@@ -82,6 +92,7 @@
     <EvidenceViewer {evidence} />
 
     <!-- Approval actions at bottom -->
+    {#if canAct}
     <div class="mt-8 p-4 bg-surface-1 border border-border rounded-lg flex flex-wrap items-center gap-3">
       <button
         onclick={handleApprove}
@@ -127,6 +138,7 @@
           </button>
         </div>
       </div>
+    {/if}
     {/if}
   {/if}
 </div>
