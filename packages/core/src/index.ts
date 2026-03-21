@@ -188,6 +188,19 @@ export type {
   EditFormat,
 } from "./schemas/llm.js";
 
+// === Events ===
+export {
+  TASK_EVENT_TYPES,
+  TaskEventTypeSchema,
+  PhaseEventSchema,
+  AgentStepEventSchema,
+} from "./schemas/events.js";
+export type {
+  TaskEventType,
+  PhaseEvent,
+  AgentStepEvent,
+} from "./schemas/events.js";
+
 // === Cost ===
 export { CostRecordSchema } from "./schemas/cost.js";
 export type { CostRecord } from "./schemas/cost.js";

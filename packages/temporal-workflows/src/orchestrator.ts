@@ -89,6 +89,7 @@ export interface TaskWorkflowInput {
   readonly mergedSha?: string;
   readonly costCents?: number;
   readonly startedAt?: string;
+  readonly costBudgetCentsOverride?: number;
 }
 
 // ─── Phase ordering ───
@@ -135,7 +136,8 @@ export async function taskOrchestrator(
   let currentState: TaskState = "created";
   const attemptNumber = input.attemptNumber ?? 1;
   let phaseIteration = input.phaseIteration ?? 0;
-  let costBudgetCents = input.config.costBudgetCents;
+  let costBudgetCents =
+    input.costBudgetCentsOverride ?? input.config.costBudgetCents;
   let costCents = input.costCents ?? 0;
   const startedAt = input.startedAt ?? new Date().toISOString();
   let lastActivityAt = startedAt;
@@ -361,6 +363,7 @@ export async function taskOrchestrator(
           mergedSha,
           costCents,
           startedAt,
+          costBudgetCentsOverride: costBudgetCents,
         });
       }
 

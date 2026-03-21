@@ -12,6 +12,7 @@ import type {
   CommandRecord,
   LintResults,
   MigrationImpact,
+  PhaseEvent,
   PolicyConfig,
   RevertabilityClass,
   SBOMResult,
@@ -124,6 +125,12 @@ export interface SafetyActivities {
     ttlSeconds: number,
   ): Promise<boolean>;
   recordCost(taskId: string, costCents: number): Promise<CostStatus>;
+}
+
+// ─── Event Activities ───
+
+export interface EventActivities {
+  publishPhaseEvent(event: PhaseEvent): Promise<void>;
 }
 
 // ─── Sandbox Activities ───

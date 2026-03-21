@@ -146,6 +146,12 @@ export type {
 } from "./safety/budget-manager.js";
 export { withCircuitBreaker } from "./safety/with-circuit-breaker.js";
 
+// === Event Publishing ===
+export { createEventPublisher } from "./events/publisher.js";
+export type { EventPublisher } from "./events/publisher.js";
+export { createEventActivities } from "./events/activities.js";
+export type { EventActivityDeps } from "./events/activities.js";
+
 // === DB Activities ===
 export { createTaskActivities } from "./db/task-activities.js";
 export type { CreateTaskInput } from "./db/task-activities.js";
@@ -294,7 +300,9 @@ export type {
   AgentResult,
   LLMActivityDeps,
   AgentStepConfig,
+  AgentLogger,
   AgentStepResult,
+  StepPublishEvent,
 } from "./llm/index.js";
 export { createPlanActivities } from "./llm/plan-activities.js";
 export type { PlanActivityDeps } from "./llm/plan-activities.js";

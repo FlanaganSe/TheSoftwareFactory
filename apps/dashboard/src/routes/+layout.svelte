@@ -7,6 +7,7 @@
   import { getApiKey, getApiUrl, isAuthenticated } from "$lib/stores/auth";
   import { createSSEClient } from "$lib/api/sse";
   import type { SSEClient } from "$lib/api/sse";
+  import { handleTaskEvent } from "$lib/stores/task-events.svelte";
   import Sidebar from "$lib/components/layout/Sidebar.svelte";
   import Header from "$lib/components/layout/Header.svelte";
 
@@ -24,6 +25,7 @@
 
     if (isAuthenticated()) {
       sseClient = createSSEClient(getApiUrl(), getApiKey());
+      sseClient.onTasks(handleTaskEvent);
       sseClient.connect();
     }
   });

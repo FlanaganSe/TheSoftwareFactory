@@ -56,7 +56,12 @@ export type {
 
 // Agent
 export { executeAgent } from "./agent.js";
-export type { AgentConfig, AgentResult } from "./agent.js";
+export type {
+  AgentConfig,
+  AgentLogger,
+  AgentResult,
+  StepPublishEvent,
+} from "./agent.js";
 
 // Activities
 export { createLLMActivities } from "./activities.js";

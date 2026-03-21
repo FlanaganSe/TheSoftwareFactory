@@ -75,9 +75,9 @@
         </div>
 
         <!-- Rulesets -->
+        {@const rulesets = (snapshotField("rulesets") ?? []) as Array<Record<string, unknown>>}
         <div class="p-4 bg-surface-1 border border-border rounded-lg">
           <h3 class="text-sm font-medium text-text-primary mb-3">Rulesets</h3>
-          {@const rulesets = (snapshotField("rulesets") ?? []) as Array<Record<string, unknown>>}
           {#if rulesets.length > 0}
             <div class="space-y-1">
               {#each rulesets as rs}
@@ -94,9 +94,9 @@
         </div>
 
         <!-- CODEOWNERS -->
+        {@const co = snapshotField("codeowners") as Record<string, unknown> | null}
         <div class="p-4 bg-surface-1 border border-border rounded-lg">
           <h3 class="text-sm font-medium text-text-primary mb-3">CODEOWNERS</h3>
-          {@const co = snapshotField("codeowners") as Record<string, unknown> | null}
           {#if co?.found}
             <div class="text-xs space-y-1">
               <div><span class="text-text-muted">Location:</span> {co.location}</div>

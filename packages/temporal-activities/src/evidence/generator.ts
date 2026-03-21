@@ -157,16 +157,17 @@ export async function generateEvidence(
   }
 
   // 3. Build protected surface edits
-  const protectedEdits: ProtectedEdit[] =
-    config.validationResult.protectedSurfaceEdits.map((filePath) => ({
-      filePath,
-      protectionClass: "flagged" as const,
-      justification: "File matches protected surface policy",
-    }));
+  const protectedEdits: ProtectedEdit[] = (
+    config.validationResult.protectedSurfaceEdits ?? []
+  ).map((filePath) => ({
+    filePath,
+    protectionClass: "flagged" as const,
+    justification: "File matches protected surface policy",
+  }));
 
   // 4. Merge commands from validation + agent
   const allCommands: CommandRecord[] = [
-    ...config.validationResult.commandsRun,
+    ...(config.validationResult.commandsRun ?? []),
     ...(config.agentResult.commandsRun ?? []),
   ];
 

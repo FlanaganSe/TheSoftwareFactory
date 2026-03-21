@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { createApiClient } from "$lib/api/client";
   import type { EvidenceResponse } from "$lib/api/client";
@@ -29,7 +30,7 @@
     try {
       const client = createApiClient(getApiUrl(), getApiKey());
       await client.approveTask(taskId);
-      alert("Task approved.");
+      goto(`/tasks/${taskId}`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to approve");
     }
@@ -40,7 +41,7 @@
     try {
       const client = createApiClient(getApiUrl(), getApiKey());
       await client.rejectTask(taskId, "Rejected after evidence review");
-      alert("Task rejected.");
+      goto(`/tasks/${taskId}`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to reject");
     }
@@ -56,7 +57,7 @@
       await client.requestChanges(taskId, changesMessage);
       showChangesInput = false;
       changesMessage = "";
-      alert("Changes requested.");
+      goto(`/tasks/${taskId}`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed");
     }
