@@ -489,7 +489,10 @@ export async function taskOrchestrator(
       } else if (phase === "implement") {
         const branchName = `factory/${input.taskId}`;
         const implModel = "openai/gpt-5.4-nano";
-        const baseSha = trustedContext?.baseSha ?? "HEAD";
+        const baseSha =
+          phaseIteration > 0 && implementResult?.headSha
+            ? implementResult.headSha
+            : (trustedContext?.baseSha ?? "HEAD");
 
         const implResult = await executeChild("implementPhase", {
           workflowId: childId,
