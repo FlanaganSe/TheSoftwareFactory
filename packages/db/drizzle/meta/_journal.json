@@ -29,6 +29,13 @@
       "when": 1774042932451,
       "tag": "0003_nifty_hiroim",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774310400000,
+      "tag": "0004_add_evidence_ready_failed",
+      "breakpoints": true
     }
   ]
 }

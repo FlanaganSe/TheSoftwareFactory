@@ -628,13 +628,32 @@ export async function taskOrchestrator(
         evidenceLocator = evidenceResult.locator;
         currentState = "evidence_ready";
       } else if (phase === "review") {
+        const reviewTaskActs = proxyActivities<
+          Pick<TaskActivities, "transitionTaskState">
+        >({
+          startToCloseTimeout: "30s",
+          retry: { maximumAttempts: 3 },
+        });
+
         if (addressingFeedback) {
           // Skip internal review when re-entering after external review feedback.
           // The PR already exists and the external reviewer is tracking it.
           currentState = "approved";
+          await reviewTaskActs.transitionTaskState(
+            input.taskId,
+            "approved",
+            "system",
+            { phase: "review", reason: "auto-approved (addressing feedback)" },
+          );
         } else if (patched("l2-auto-approve") && input.autonomyLevel === "L2") {
           // L2 (full autonomy): auto-approve without human review
           currentState = "approved";
+          await reviewTaskActs.transitionTaskState(
+            input.taskId,
+            "approved",
+            "system",
+            { phase: "review", reason: "auto-approved (L2 autonomy)" },
+          );
         } else {
           const reviewResult = await executeChild("reviewPhase", {
             workflowId: childId,
@@ -648,6 +667,12 @@ export async function taskOrchestrator(
 
           if (reviewResult.outcome === "approved") {
             currentState = "approved";
+            await reviewTaskActs.transitionTaskState(
+              input.taskId,
+              "approved",
+              "system",
+              { phase: "review", reason: "approved by reviewer" },
+            );
             // Continue to pr_creation
           } else if (reviewResult.outcome === "changes_requested") {
             // Loop back to implement
@@ -674,6 +699,18 @@ export async function taskOrchestrator(
           // Skip PR creation on feedback loop — PR already exists.
           // The implement phase pushed new commits to the existing branch.
           currentState = "pr_created";
+          const prSkipTaskActs = proxyActivities<
+            Pick<TaskActivities, "transitionTaskState">
+          >({
+            startToCloseTimeout: "30s",
+            retry: { maximumAttempts: 3 },
+          });
+          await prSkipTaskActs.transitionTaskState(
+            input.taskId,
+            "pr_created",
+            "system",
+            { phase: "pr_creation", reason: "skipped (addressing feedback)" },
+          );
         } else {
           const prContext: TrustedBaseContext = trustedContext ?? {
             baseSha: "HEAD",
