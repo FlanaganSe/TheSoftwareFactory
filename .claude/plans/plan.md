@@ -49,15 +49,15 @@ None. All fixes are to existing files.
 
 ## Milestone Outline
 
-### M1: Fix Agent Loop and Implement Phase
+### ~~M1: Fix Agent Loop and Implement Phase~~ ✓
 
 The core pipeline fixes — ensures the agent loop terminates productively, guardrail trips don't kill workflows, new files are captured, and blocking conditions have timeouts.
 
-- [ ] M1.1: Fix no-progress guardrail — remove `actionCount` param from `guardrails.ts:computeFingerprint`, remove `auditLog.length` arg from `agent.ts:280`, raise `noProgressThreshold` to 5, update tests → verify: `pnpm --filter @software-factory/temporal-activities run test`
-- [ ] M1.2: Fix guardrail trip handling — remove throw in `activities.ts:83-88`, add guardrail-trip state transition in `implement.ts` after `executeAgentStep` → verify: `pnpm run typecheck`
-- [ ] M1.3: Fix git diff to capture untracked files — add `git ls-files --others --exclude-standard` in `implement.ts:179-188`, deduplicate with tracked changes → verify: `pnpm run typecheck`
-- [ ] M1.4: Add model pricing for `gpt-5.4-nano` in `agent.ts:440-444`, add fallback comment → verify: grep for `gpt-5.4-nano` in agent.ts
-- [ ] M1.5: Add 4h timeouts to `condition()` calls in `implement.ts:115` and `setup.ts:101`, add timeout handling with state transitions → verify: `pnpm run typecheck`
+- [x] M1.1: Fix no-progress guardrail — remove `actionCount` param from `guardrails.ts:computeFingerprint`, remove `auditLog.length` arg from `agent.ts:280`, raise `noProgressThreshold` to 5, update tests → verify: `pnpm --filter @software-factory/temporal-activities run test`
+- [x] M1.2: Fix guardrail trip handling — remove throw in `activities.ts:83-88`, add guardrail-trip state transition in `implement.ts` after `executeAgentStep` → verify: `pnpm run typecheck`
+- [x] M1.3: Fix git diff to capture untracked files — add `git ls-files --others --exclude-standard` in `implement.ts:179-188`, deduplicate with tracked changes → verify: `pnpm run typecheck`
+- [x] M1.4: Add model pricing for `gpt-5.4-nano` in `agent.ts:440-444`, add fallback comment → verify: grep for `gpt-5.4-nano` in agent.ts
+- [x] M1.5: Add 4h timeouts to `condition()` calls in `implement.ts:115` and `setup.ts:101`, add timeout handling with state transitions → verify: `pnpm run typecheck`
   Commit: "fix: agent loop guardrails, git diff, pricing, and condition timeouts"
 
 **Verify**: `pnpm run typecheck` + `pnpm --filter @software-factory/temporal-activities run test` + verification greps
