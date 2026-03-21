@@ -16,6 +16,7 @@ import {
   condition,
   continueAsNew,
   executeChild,
+  getExternalWorkflowHandle,
   patched,
   proxyActivities,
   setHandler,
@@ -220,37 +221,77 @@ export async function taskOrchestrator(
 
   // GitHub lifecycle signals — forwarded to child pr_tracking workflow.
   // Parent handlers prevent "unhandled signal" warnings and track activity.
-  setHandler(prReviewSignal, async () => {
+  setHandler(prReviewSignal, async (payload) => {
     const release = await mutex.acquire();
     try {
       lastActivityAt = new Date().toISOString();
+      if (currentPhase === "pr_tracking") {
+        try {
+          const child = getExternalWorkflowHandle(
+            `task-${input.taskId}-pr_tracking-${phaseIteration}`,
+          );
+          await child.signal(prReviewSignal, payload);
+        } catch {
+          // Child may not exist yet or may have completed
+        }
+      }
     } finally {
       release();
     }
   });
 
-  setHandler(checkCompleteSignal, async () => {
+  setHandler(checkCompleteSignal, async (payload) => {
     const release = await mutex.acquire();
     try {
       lastActivityAt = new Date().toISOString();
+      if (currentPhase === "pr_tracking") {
+        try {
+          const child = getExternalWorkflowHandle(
+            `task-${input.taskId}-pr_tracking-${phaseIteration}`,
+          );
+          await child.signal(checkCompleteSignal, payload);
+        } catch {
+          // Child may not exist yet or may have completed
+        }
+      }
     } finally {
       release();
     }
   });
 
-  setHandler(prClosedSignal, async () => {
+  setHandler(prClosedSignal, async (payload) => {
     const release = await mutex.acquire();
     try {
       lastActivityAt = new Date().toISOString();
+      if (currentPhase === "pr_tracking") {
+        try {
+          const child = getExternalWorkflowHandle(
+            `task-${input.taskId}-pr_tracking-${phaseIteration}`,
+          );
+          await child.signal(prClosedSignal, payload);
+        } catch {
+          // Child may not exist yet or may have completed
+        }
+      }
     } finally {
       release();
     }
   });
 
-  setHandler(mergeQueueUpdateSignal, async () => {
+  setHandler(mergeQueueUpdateSignal, async (payload) => {
     const release = await mutex.acquire();
     try {
       lastActivityAt = new Date().toISOString();
+      if (currentPhase === "pr_tracking") {
+        try {
+          const child = getExternalWorkflowHandle(
+            `task-${input.taskId}-pr_tracking-${phaseIteration}`,
+          );
+          await child.signal(mergeQueueUpdateSignal, payload);
+        } catch {
+          // Child may not exist yet or may have completed
+        }
+      }
     } finally {
       release();
     }
