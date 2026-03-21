@@ -31,7 +31,7 @@ export interface GuardrailConfig {
 
 const DEFAULT_CONFIG: GuardrailConfig = {
   maxSteps: 10,
-  noProgressThreshold: 3,
+  noProgressThreshold: 5,
   loopOfDoomThreshold: 4,
   wallClockTimeoutMs: 1_800_000,
   budgetCents: 1000,
@@ -109,14 +109,12 @@ export function createGuardrails(partial?: Partial<GuardrailConfig>) {
     testPassCount: number,
     testFailCount: number,
     lintErrorCount: number,
-    actionCount: number = 0,
   ): string {
     const data = JSON.stringify({
       modifiedFilePaths: [...modifiedFiles.keys()].sort(),
       testPassCount,
       testFailCount,
       lintErrorCount,
-      actionCount,
     });
     return createHash("sha256").update(data).digest("hex");
   }

@@ -98,7 +98,21 @@ export async function setupPhase(input: SetupInput): Promise<SetupResult> {
         approvedContract = contract;
       });
 
-      await condition(() => approvedContract !== null);
+      const setupMet = await condition(() => approvedContract !== null, "4h");
+      if (!setupMet) {
+        await taskActivities.transitionTaskState(
+          input.taskId,
+          "failed",
+          "system",
+          {
+            phase: "setup",
+            action: "setup_approval_timed_out",
+          },
+        );
+        throw ApplicationFailure.nonRetryable(
+          "Setup contract approval timed out after 4 hours",
+        );
+      }
       setupContract = approvedContract as unknown as SetupContract;
 
       await taskActivities.transitionTaskState(

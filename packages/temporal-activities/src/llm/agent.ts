@@ -23,6 +23,19 @@ import {
   createAgentTools,
 } from "./tools.js";
 
+/** Minimal structured logger interface (compatible with Pino). */
+export interface AgentLogger {
+  info(obj: Record<string, unknown>, msg: string): void;
+  warn(obj: Record<string, unknown>, msg: string): void;
+  error(obj: Record<string, unknown>, msg: string): void;
+}
+
+const noopLogger: AgentLogger = {
+  info() {},
+  warn() {},
+  error() {},
+};
+
 export interface AgentConfig {
   readonly taskId: string;
   readonly objective: string;
@@ -54,6 +67,24 @@ export interface AgentConfig {
       readonly signature?: string;
     }[]
   >;
+  /** Fire-and-forget callback to publish step progress events. */
+  readonly onStepPublish?: (event: StepPublishEvent) => void;
+  /** Structured logger (defaults to noop if not provided). */
+  readonly logger?: AgentLogger;
+}
+
+export interface StepPublishEvent {
+  readonly stepNumber: number;
+  readonly toolCalls: readonly {
+    readonly toolName: string;
+    readonly summary?: string;
+  }[];
+  readonly costCents: number;
+  readonly totalCostCents: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly filesModified: readonly string[];
+  readonly finishReason: string;
 }
 
 export interface AgentResult {
@@ -79,6 +110,14 @@ Rules:
 export async function executeAgent(
   config: AgentConfig,
 ): Promise<Result<AgentResult, FactoryError>> {
+  const log = config.logger ?? noopLogger;
+  const taskId = config.taskId;
+
+  log.info(
+    { taskId, model: config.provider.defaultModel, maxSteps: config.maxSteps },
+    "agent starting",
+  );
+
   const provider = createProvider(config.provider);
   const requestConfig = buildRequestConfig(config.provider);
   const costTracker = createCostTracker(config.costTrackerDeps);
@@ -150,6 +189,11 @@ export async function executeAgent(
   let guardrailTripped: string | undefined;
   const abortController = new AbortController();
 
+  log.info(
+    { taskId, model: config.provider.defaultModel },
+    "starting LLM agentic loop",
+  );
+
   try {
     const result = await generateText({
       model: provider(config.provider.defaultModel),
@@ -160,6 +204,17 @@ export async function executeAgent(
       ...requestConfig,
       onStepFinish: async (event) => {
         guardrailState.stepCount = event.stepNumber + 1;
+        log.info(
+          {
+            taskId,
+            step: event.stepNumber,
+            finishReason: event.finishReason,
+            toolCalls: event.toolCalls.map((tc) => tc.toolName),
+            inputTokens: event.usage.inputTokens,
+            outputTokens: event.usage.outputTokens,
+          },
+          "agent step completed",
+        );
 
         // Record usage
         const inputTokens = event.usage.inputTokens ?? 0;
@@ -222,13 +277,7 @@ export async function executeAgent(
             if (typeof p === "string") modifiedFiles.set(p, entry.result);
           }
         }
-        const fp = guardrails.computeFingerprint(
-          modifiedFiles,
-          0,
-          0,
-          0,
-          auditLog.length,
-        );
+        const fp = guardrails.computeFingerprint(modifiedFiles, 0, 0, 0);
         guardrailState.stateFingerprints.push(fp);
 
         // Check guardrails
@@ -236,6 +285,30 @@ export async function executeAgent(
         if (trip) {
           guardrailTripped = trip.guardrail;
           abortController.abort();
+        }
+
+        // Publish step progress (fire-and-forget)
+        if (config.onStepPublish) {
+          try {
+            config.onStepPublish({
+              stepNumber: event.stepNumber,
+              toolCalls: event.toolCalls.map((tc) => ({
+                toolName: tc.toolName,
+                summary: summarizeToolCall(
+                  tc.toolName,
+                  tc.input as Record<string, unknown>,
+                ),
+              })),
+              costCents,
+              totalCostCents: guardrailState.totalCostCents,
+              inputTokens,
+              outputTokens,
+              filesModified: [...modifiedFiles.keys()],
+              finishReason: event.finishReason,
+            });
+          } catch {
+            // Never fail the agent loop for event publishing
+          }
         }
 
         // Check kill switch between steps
@@ -270,6 +343,18 @@ export async function executeAgent(
       }
     }
 
+    log.info(
+      {
+        taskId,
+        success: !guardrailTripped,
+        filesModified: [...filesModified],
+        toolCallCount: auditLog.length,
+        totalCostCents: guardrailState.totalCostCents,
+        steps: guardrailState.stepCount,
+      },
+      "agent completed",
+    );
+
     return ok({
       success: !guardrailTripped,
       filesModified: [...filesModified],
@@ -281,6 +366,17 @@ export async function executeAgent(
       auditEntries,
     });
   } catch (error) {
+    log.error(
+      {
+        taskId,
+        err: error instanceof Error ? error.message : String(error),
+        guardrailTripped,
+        aborted: abortController.signal.aborted,
+        steps: guardrailState.stepCount,
+      },
+      "agent execution failed",
+    );
+
     // If aborted due to guardrail/kill switch, return a normal result
     if (guardrailTripped && abortController.signal.aborted) {
       const filesModified = new Set<string>();
@@ -313,6 +409,22 @@ export async function executeAgent(
   }
 }
 
+/** Create a short, safe summary of a tool call for event publishing. */
+function summarizeToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+): string {
+  const path = typeof args.path === "string" ? args.path : undefined;
+  const command = typeof args.command === "string" ? args.command : undefined;
+  const query = typeof args.query === "string" ? args.query : undefined;
+
+  if (path) return path;
+  if (command)
+    return command.length > 120 ? `${command.slice(0, 117)}...` : command;
+  if (query) return query.length > 120 ? `${query.slice(0, 117)}...` : query;
+  return toolName;
+}
+
 function estimateCostCents(
   inputTokens: number,
   outputTokens: number,
@@ -323,11 +435,14 @@ function estimateCostCents(
     "anthropic/claude-sonnet-4-6": { input: 300, output: 1500 },
     "anthropic/claude-opus-4-6": { input: 1500, output: 7500 },
     "openai/gpt-5.2-mini": { input: 15, output: 60 },
+    "openai/gpt-5.4-nano": { input: 10, output: 40 },
   };
 
+  // Unknown models fall back to Claude Sonnet pricing as a conservative upper bound.
+  // If cost seems too high for a new model, add it to the rates table above.
   const rate = rates[model] ?? { input: 300, output: 1500 };
-  return (
+  return Math.ceil(
     (inputTokens / 1_000_000) * rate.input +
-    (outputTokens / 1_000_000) * rate.output
+      (outputTokens / 1_000_000) * rate.output,
   );
 }

@@ -112,7 +112,22 @@ export async function implementPhase(
       rejectReason = reason;
     });
 
-    await condition(() => approved || rejected);
+    const gateMet = await condition(() => approved || rejected, "4h");
+    if (!gateMet) {
+      await taskActivities.transitionTaskState(
+        input.taskId,
+        "failed",
+        "system",
+        {
+          phase: "implement",
+          action: "approval_timed_out",
+          autonomyLevel: input.autonomyLevel,
+        },
+      );
+      throw ApplicationFailure.nonRetryable(
+        "Implementation approval timed out after 4 hours",
+      );
+    }
 
     if (rejected) {
       await taskActivities.transitionTaskState(
@@ -162,6 +177,21 @@ export async function implementPhase(
     policies: input.policies,
   });
 
+  // If a guardrail tripped, log it. The agent may still have partial progress.
+  if (agentResult.guardrailTripped) {
+    await taskActivities.transitionTaskState(
+      input.taskId,
+      "in_progress",
+      "system",
+      {
+        phase: "implement",
+        action: "guardrail_tripped",
+        guardrail: agentResult.guardrailTripped,
+        filesModified: agentResult.filesModified.length,
+      },
+    );
+  }
+
   // Step 5: After agent completes, collect modified files and push
   let headSha = input.baseSha;
 
@@ -176,16 +206,28 @@ export async function implementPhase(
       );
     }
 
-    // Collect changed files from sandbox via git diff
+    // Collect changed files from sandbox — both tracked changes and new untracked files
     const diffResult = await sandboxActivities.execInSandbox(
       input.sandbox.containerId,
       ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
     );
 
-    const changedPaths = diffResult.stdout
+    const untrackedResult = await sandboxActivities.execInSandbox(
+      input.sandbox.containerId,
+      ["git", "ls-files", "--others", "--exclude-standard"],
+    );
+
+    const trackedChanges = diffResult.stdout
       .split("\n")
       .map((p) => p.trim())
       .filter((p) => p.length > 0);
+
+    const untrackedFiles = untrackedResult.stdout
+      .split("\n")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
+    const changedPaths = [...new Set([...trackedChanges, ...untrackedFiles])];
 
     // Read each changed file from sandbox
     const changes: FileChangeData[] = [];
@@ -217,10 +259,8 @@ export async function implementPhase(
     }
   }
 
-  // Record cost
-  if (agentResult.totalCostCents > 0) {
-    await safetyActivities.recordCost(input.taskId, agentResult.totalCostCents);
-  }
+  // Cost is already recorded per-step inside the agent loop via costTracker.recordLLMCost().
+  // Do NOT record again here — that would double-count.
 
   return {
     taskId: input.taskId,
