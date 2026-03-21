@@ -206,28 +206,11 @@ export async function implementPhase(
       );
     }
 
-    // Collect changed files from sandbox — both tracked changes and new untracked files
-    const diffResult = await sandboxActivities.execInSandbox(
-      input.sandbox.containerId,
-      ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
-    );
-
-    const untrackedResult = await sandboxActivities.execInSandbox(
-      input.sandbox.containerId,
-      ["git", "ls-files", "--others", "--exclude-standard"],
-    );
-
-    const trackedChanges = diffResult.stdout
-      .split("\n")
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
-
-    const untrackedFiles = untrackedResult.stdout
-      .split("\n")
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
-
-    const changedPaths = [...new Set([...trackedChanges, ...untrackedFiles])];
+    // Use the agent's tracked file list directly. The sandbox container
+    // (node:22-slim) does not have git installed, so git diff/ls-files
+    // silently fail with empty stdout. The agent already tracks which
+    // files were written via file_write/file_edit tool calls.
+    const changedPaths = [...new Set(agentResult.filesModified)];
 
     // Read each changed file from sandbox
     const changes: FileChangeData[] = [];

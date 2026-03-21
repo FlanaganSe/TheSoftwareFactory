@@ -128,13 +128,7 @@ export async function prCreationPhase(
     throw new Error(`Task ${fullInput.taskId} killed during PR creation`);
   }
 
-  // Step 2: Transition task state
-  await transitionTaskState(fullInput.taskId, "pr_created", "system", {
-    phase: "pr_creation",
-    attemptNumber: fullInput.attemptNumber,
-  });
-
-  // Step 3: Create PR (idempotent via side-effects ledger)
+  // Step 2: Create PR (idempotent via side-effects ledger)
   const prConfig: CreatePRConfigData = {
     owner: fullInput.owner,
     repo: fullInput.repo,
@@ -156,6 +150,14 @@ export async function prCreationPhase(
   };
 
   const prResult = await createPullRequest(prConfig, "");
+
+  // Step 3: Transition task state AFTER PR is confirmed created.
+  // Previously this was before createPullRequest — if the API call failed,
+  // the DB was stuck at pr_created with no actual PR.
+  await transitionTaskState(fullInput.taskId, "pr_created", "system", {
+    phase: "pr_creation",
+    attemptNumber: fullInput.attemptNumber,
+  });
 
   // Step 4: Create factory check run
   const checkRunConfig: CheckRunConfigData = {

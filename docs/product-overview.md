@@ -133,7 +133,7 @@ software-factory/
 
 ### Task lifecycle (state machine)
 
-16 states, 21 explicit transitions, 1 wildcard (any non-terminal → cancelled). 3 terminal states: `merged`, `failed`, `cancelled`.
+16 states, 22 explicit transitions (including `evidence_ready → failed`), 1 wildcard (any non-terminal → cancelled). 3 terminal states: `merged`, `failed`, `cancelled`.
 
 ```
 created → assigned → in_progress → evidence_ready → approved → pr_created
@@ -146,7 +146,7 @@ needs_clarification    paused    changes_requested    external_checks_pending
                                                                  external_blocked
 ```
 
-The state machine is enforced at two levels: application code (via `isValidTransition()`) and a database trigger on the `tasks` table that checks against the `task_valid_transitions` lookup table.
+The state machine is enforced by a database trigger on the `tasks` table that checks against the `task_valid_transitions` lookup table (seeded by migration `0001`). The application-level `canTransition()` in `state-machine.ts` exists but is never called — the DB trigger is the sole enforcer. The orchestrator calls `transitionTaskState` activity to persist state changes; if the transition is invalid, the trigger rejects it.
 
 ### Policy engine
 
@@ -224,6 +224,15 @@ Every task state transition writes to both `tasks` and `audit_entries` in one DB
 ### Webhook idempotency
 GitHub webhook deliveries are deduplicated via `X-GitHub-Delivery` header, persisted in `webhook_deliveries` before processing. Side effects use an idempotency ledger (`side_effects` table) with `ON CONFLICT` checks.
 
+### Orchestrator state persistence
+The orchestrator explicitly calls `transitionTaskState` activities to persist state transitions to Postgres — the DB trigger is the sole enforcer. Three areas require special care:
+- **Review phase**: All paths that set `currentState = "approved"` (L2 auto-approve, feedback auto-skip, human approval) must also call `transitionTaskState`.
+- **PR creation skip**: When `addressingFeedback === true`, the `prCreationPhase` child is skipped, so the orchestrator calls `transitionTaskState("pr_created")` directly.
+- **0-change guard**: If the implement phase produces zero file changes and a guardrail tripped, the orchestrator breaks early with `currentState = "failed"` rather than running 4 more phases.
+
+### Re-implementation feedback loop
+When external review returns `changes_requested`, the orchestrator increments `phaseIteration` and loops back to implement. On iteration 1+, the `baseSha` is set to the previous iteration's `headSha` (not `trustedContext.baseSha`) so that the new commit is a fast-forward descendant of the branch tip. The `noProgressThreshold` guardrail (10 read-only tool calls) prevents infinite loops.
+
 ### Repo identity model (ADR-003)
 One canonical identity: DB auto-generated UUID as PK, `(github_owner, github_repo)` unique index as lookup key. Resolved via `getOrCreateRepo(db, owner, repo)` — a two-step slug lookup + create with unique constraint retry.
 
@@ -285,7 +294,7 @@ Bearer tokens with SHA-256 hashed API keys. Three roles: `admin`, `operator`, `v
 |--------|------|------|---------|
 | POST | `/api/tasks` | admin, operator | Submit task (resolves repo, creates task, starts workflow) |
 | GET | `/api/tasks` | any | List active tasks from DB |
-| GET | `/api/tasks/:id` | any | Get task status from Temporal |
+| GET | `/api/tasks/:id` | any | Get task details (DB state + Temporal progress). Returns `status` (DB lifecycle state) and `workflowStatus` (Temporal runtime status like "RUNNING") as separate fields |
 
 **Signals:**
 | Method | Path | Auth | Purpose |
@@ -390,13 +399,14 @@ pnpm run lint          # Biome
 
 ### Known gaps
 - No integration test exercises the full API → Temporal → real activities → real DB path (E2E uses mock activities)
-- 8 pre-existing MinIO/cache test failures (unrelated to core pipeline)
+- 8 pre-existing MinIO/artifact-store test failures (infrastructure — MinIO container connectivity)
+- 18 pre-existing workflow test failures: orchestrator, feedback-loop, and merge-execution tests fail because `publishPhaseEvent` activity (observability) is not registered in test workers. The activity runs fine in production but is missing from the test worker setup
 
 ---
 
 ## Important decisions and tradeoffs
 
-See `docs/decisions.md` for the full ADR log. Key decisions:
+See `docs/decisions.md` for the full ADR log (6 ADRs). Key decisions:
 
 **ADR-001: Persistence at the API boundary.** The API creates repo + task rows before starting the Temporal workflow. This means 201 is honest, tasks are always queryable, and the workflow never fabricates identities. Tradeoff: if `workflow.start` fails after task creation, the task is orphaned in `created` state (acceptable for V1).
 
@@ -406,11 +416,15 @@ See `docs/decisions.md` for the full ADR log. Key decisions:
 
 **ADR-004: L2 auto-approves setup contracts.** Repos without `.factory/setup.yml` get a default contract. L2 autonomy auto-approves it. L0/L1 wait for human signal via `POST /api/tasks/:id/approve-setup`.
 
+**ADR-005: All orchestrator state survives Continue-As-New.** Every mutable variable read by a later phase is declared on `TaskWorkflowInput`, initialized from input, and passed in the `continueAsNew` call. Adding a new state variable requires updating three locations.
+
+**ADR-006: Parent-forwards-signals for webhook delivery.** Webhook signals are dispatched to the parent orchestrator (stable ID). The parent forwards to the active pr_tracking child using `getExternalWorkflowHandle`. This avoids the webhook dispatcher needing to know the current `phaseIteration`.
+
 **neverthrow over thrown exceptions.** Domain boundaries use `Result<T, FactoryError>` to make error paths explicit and composable. Temporal activities convert at the boundary to `ApplicationFailure` (Temporal's error type).
 
 **Zod strict mode everywhere.** `.strict()` on all object schemas catches field drift early. Types are always derived, never hand-written.
 
-**Continue-As-New at 10K events.** The orchestrator checks Temporal's history length and calls `continueAsNew` to avoid the 51,200 event limit, preserving inter-phase state across the boundary.
+**Continue-As-New at 10K events.** The orchestrator checks Temporal's history length and calls `continueAsNew` to avoid the 51,200 event limit.
 
 ---
 
@@ -435,3 +449,11 @@ See `docs/decisions.md` for the full ADR log. Key decisions:
 9. **Docker Desktop on Mac requires a monkey-patch.** `docker-modem` has a redirect handling bug. The sandbox code patches it. If Docker operations fail on Mac, check this path first.
 
 10. **drizzle-kit's bundled dotenv loads from `process.cwd()`.** Migration scripts use `DOTENV_CONFIG_PATH=../../.env` to find the root `.env` file. If migrations fail silently, this is usually why.
+
+11. **`response.status` vs `response.workflowStatus` in the task detail API.** `status` is the DB lifecycle state (e.g., `evidence_ready`). `workflowStatus` is the Temporal runtime status (e.g., `RUNNING`). Dashboard polling uses `workflowStatus`; state badges and action guards use `status`. Mixing them up causes the dashboard to show wrong states or fail to poll.
+
+12. **The application-level state machine is dead code.** `canTransition()` in `state-machine.ts` is never called. The DB trigger on the `tasks` table is the sole enforcement mechanism. If you need a new transition, add it to `task_valid_transitions` via a migration, not in `state-machine.ts`.
+
+13. **Signal forwarding only works during `pr_tracking` phase.** The parent orchestrator's signal handlers forward to the child only when `currentPhase === "pr_tracking"`. Signals arriving during other phases are silently absorbed (updating `lastActivityAt` only). If pr_tracking relies on a signal that arrives before the phase starts, it will miss it and must fall back to polling.
+
+14. **`phaseIteration` affects child workflow IDs.** Phases that repeat across feedback loops (implement, validate, evidence, review, pr_tracking) include `phaseIteration` in their child workflow ID: `task-{taskId}-{phase}-{phaseIteration}`. Signal forwarding, task queries, and any code that computes child IDs must use the current `phaseIteration` value.
